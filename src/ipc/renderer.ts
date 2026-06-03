@@ -53,6 +53,18 @@ import {
   WINDOW_MAXIMIZE,
   WINDOW_SYSTEM_BUTTON_PRESS,
   WINDOW_UNMAXIMIZE,
+  GET_LIBRARIES,
+  GET_CURRENT_LIBRARY_PATH,
+  CREATE_LIBRARY,
+  SWITCH_LIBRARY,
+  REMOVE_LIBRARY,
+  RENAME_LIBRARY,
+  GetLibrariesReply,
+  CreateLibraryMessage,
+  CreateLibraryReply,
+  SwitchLibraryMessage,
+  RemoveLibraryMessage,
+  RenameLibraryMessage,
 } from './messages';
 
 export class RendererMessenger {
@@ -186,4 +198,21 @@ export class RendererMessenger {
     const userDataPath = await RendererMessenger.getPath('userData');
     return path.join(userDataPath, 'themes');
   };
+
+  static getLibraries = (): GetLibrariesReply => ipcRenderer.sendSync(GET_LIBRARIES);
+
+  static getCurrentLibraryPath = (): string =>
+    ipcRenderer.sendSync(GET_CURRENT_LIBRARY_PATH);
+
+  static createLibrary = (msg: CreateLibraryMessage): Promise<CreateLibraryReply> =>
+    ipcRenderer.invoke(CREATE_LIBRARY, msg);
+
+  static switchLibrary = (msg: SwitchLibraryMessage): void =>
+    ipcRenderer.send(SWITCH_LIBRARY, msg);
+
+  static removeLibrary = (msg: RemoveLibraryMessage): Promise<void> =>
+    ipcRenderer.invoke(REMOVE_LIBRARY, msg);
+
+  static renameLibrary = (msg: RenameLibraryMessage): Promise<void> =>
+    ipcRenderer.invoke(RENAME_LIBRARY, msg);
 }

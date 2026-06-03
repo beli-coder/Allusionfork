@@ -24,9 +24,18 @@ import { IS_DEV, IS_MAC } from '../common/process';
 import { TagDTO, ROOT_TAG_ID } from './api/tag';
 import { MainMessenger } from './ipc/main';
 import { WindowSystemButtonPress } from './ipc/messages';
+import { LibraryRegistry } from './libraries/library-registry';
+import { resolveCliLibraryPath, buildLibraryArgs } from './libraries/cli-args';
 
-// TODO: change this when running in portable mode, see portable-improvements branch
+// Allow running an independent library instance via: --library <path>
+// app.setPath MUST be called before any app.getPath call and before app.isReady().
+const cliLibraryPath = resolveCliLibraryPath();
+if (cliLibraryPath) {
+  app.setPath('userData', cliLibraryPath);
+}
+
 const basePath = app.getPath('userData');
+const libraryRegistry = LibraryRegistry.create();
 
 const preferencesFilePath = path.join(basePath, 'preferences.json');
 const windowStateFilePath = path.join(basePath, 'windowState.json');
@@ -121,6 +130,7 @@ function createWindow() {
       settings: 'Settings',
       'help-center': 'Help Center',
       about: 'About',
+      'library-manager': 'Manage Libraries',
     };
 
     if (!(frameName in WINDOW_TITLES)) {
@@ -319,7 +329,7 @@ function createWindow() {
   );
 
   if (clipServer === null) {
-    clipServer = new ClipServer(importExternalImage, addTagsToFile, getTags);
+    clipServer = new ClipServer(basePath, importExternalImage, addTagsToFile, getTags);
   }
 
   // System tray icon: Always show on Mac, or other platforms when the app is running in the background
@@ -745,6 +755,34 @@ MainMessenger.onToggleCheckUpdatesOnStartup(() => {
 
 MainMessenger.onIsCheckUpdatesOnStartupEnabled(() => preferences.checkForUpdatesOnStartup === true);
 
+MainMessenger.onGetLibraries(() => {
+  // Auto-register this library on first access so it always appears in the list
+  if (!libraryRegistry.hasLibrary(basePath)) {
+    libraryRegistry.addLibrary('Default', basePath);
+  } else {
+    libraryRegistry.updateLastOpened(basePath);
+  }
+  return { entries: libraryRegistry.listLibraries(), currentPath: basePath };
+});
+
+MainMessenger.onGetCurrentLibraryPath(() => basePath);
+
+MainMessenger.onCreateLibrary(async ({ name, path: libraryPath }) => {
+  try {
+    await fse.ensureDir(libraryPath);
+    const entry = libraryRegistry.addLibrary(name, libraryPath);
+    return { entry };
+  } catch (e) {
+    return { error: String(e) };
+  }
+});
+
+MainMessenger.onSwitchLibrary(({ path: libraryPath }) => relaunchWithLibrary(libraryPath));
+
+MainMessenger.onRemoveLibrary(({ id }) => libraryRegistry.removeLibrary(id));
+
+MainMessenger.onRenameLibrary(({ id, name }) => libraryRegistry.renameLibrary(id, name));
+
 // Helper functions and variables/constants
 
 const MIN_ZOOM_FACTOR = 0.5;
@@ -825,7 +863,13 @@ function saveWindowState() {
 }
 
 function forceRelaunch() {
+  // app.relaunch() with no args preserves the original argv (including --library if present)
   app.relaunch();
+  app.exit();
+}
+
+function relaunchWithLibrary(libraryPath: string) {
+  app.relaunch({ args: buildLibraryArgs(process.argv.slice(1), libraryPath) });
   app.exit();
 }
 
