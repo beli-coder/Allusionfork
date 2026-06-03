@@ -208,22 +208,22 @@ const LibraryItem = ({ lib, isCurrent, onSwitch, onRefresh }: LibraryItemProps) 
         <span className="library-item-path">{lib.path}</span>
       </div>
       <ButtonGroup>
-        {!isCurrent && (
+        {!isCurrent ? (
           <Button
             text="Switch"
             onClick={() => onSwitch(lib)}
             styling="outlined"
             icon={IconSet.RELOAD}
           />
-        )}
-        {!isRenaming && (
+        ) : undefined}
+        {!isRenaming ? (
           <Button
             text="Rename"
             onClick={startRename}
             styling="outlined"
             icon={IconSet.REPLACE}
           />
-        )}
+        ) : undefined}
         <Button
           text="Remove"
           onClick={handleRemove}

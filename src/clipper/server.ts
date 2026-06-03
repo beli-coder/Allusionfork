@@ -65,8 +65,8 @@ class ClipServer {
     importLocation: '',
   };
 
-  private readonly this.preferencesFilePath: string;
-  private readonly this.importQueueFilePath: string;
+  private readonly preferencesFilePath: string;
+  private readonly importQueueFilePath: string;
   private server: Server | null = null;
   private importImage: (item: IImportItem) => Promise<boolean>;
   private addTagsToFile: (item: IImportItem) => Promise<boolean>;
@@ -84,14 +84,14 @@ class ClipServer {
     addTagsToFile: (item: IImportItem) => Promise<boolean>,
     requestTags: () => Promise<TagDTO[]>,
   ) {
-    this.this.preferencesFilePath = path.join(basePath, 'clipPreferences.json');
-    this.this.importQueueFilePath = path.join(basePath, 'importQueue.txt');
+    this.preferencesFilePath = path.join(basePath, 'clipPreferences.json');
+    this.importQueueFilePath = path.join(basePath, 'importQueue.txt');
     this.importImage = importImage;
     this.addTagsToFile = addTagsToFile;
     this.requestTags = requestTags;
 
-    if (fse.existsSync(this.this.preferencesFilePath)) {
-      const existingPrefs = fse.readJSONSync(this.this.preferencesFilePath);
+    if (fse.existsSync(this.preferencesFilePath)) {
+      const existingPrefs = fse.readJSONSync(this.preferencesFilePath);
       this.preferences = {
         ...this.preferences,
         ...existingPrefs,
