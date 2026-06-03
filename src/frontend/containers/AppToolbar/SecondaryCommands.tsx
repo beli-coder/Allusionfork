@@ -29,6 +29,11 @@ const SecondaryCommands = observer(() => {
         accelerator={<KeyCombo combo={uiStore.hotkeyMap.toggleHelpCenter} />}
       />
       <MenuItem
+        icon={IconSet.FOLDER_OPEN}
+        onClick={uiStore.toggleLibraryManager}
+        text="Manage Libraries"
+      />
+      <MenuItem
         icon={IconSet.SETTINGS}
         onClick={uiStore.toggleSettings}
         text="Settings"

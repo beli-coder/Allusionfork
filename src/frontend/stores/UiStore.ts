@@ -131,6 +131,7 @@ class UiStore {
   @observable isSettingsOpen: boolean = false;
   @observable isHelpCenterOpen: boolean = false;
   @observable isAboutOpen: boolean = false;
+  @observable isLibraryManagerOpen: boolean = false;
   @observable isLocationRecoveryOpen: ID | null = null;
   @observable isPreviewOpen: boolean = false;
   @observable isAdvancedSearchOpen: boolean = false;
@@ -363,6 +364,14 @@ class UiStore {
 
   @action.bound closeAbout(): void {
     this.isAboutOpen = false;
+  }
+
+  @action.bound toggleLibraryManager(): void {
+    this.isLibraryManagerOpen = !this.isLibraryManagerOpen;
+  }
+
+  @action.bound closeLibraryManager(): void {
+    this.isLibraryManagerOpen = false;
   }
 
   @action.bound openToolbarFileRemover(): void {

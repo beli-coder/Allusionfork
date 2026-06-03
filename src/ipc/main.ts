@@ -52,6 +52,18 @@ import {
   WINDOW_MAXIMIZE,
   WINDOW_SYSTEM_BUTTON_PRESS,
   WINDOW_UNMAXIMIZE,
+  GET_LIBRARIES,
+  GET_CURRENT_LIBRARY_PATH,
+  CREATE_LIBRARY,
+  SWITCH_LIBRARY,
+  REMOVE_LIBRARY,
+  RENAME_LIBRARY,
+  GetLibrariesReply,
+  CreateLibraryMessage,
+  CreateLibraryReply,
+  SwitchLibraryMessage,
+  RemoveLibraryMessage,
+  RenameLibraryMessage,
 } from './messages';
 
 export class MainMessenger {
@@ -183,4 +195,23 @@ export class MainMessenger {
 
   static onIsCheckUpdatesOnStartupEnabled = (cb: () => boolean) =>
     ipcMain.on(IS_CHECK_UPDATES_ON_STARTUP_ENABLED, (e) => (e.returnValue = cb()));
+
+  static onGetLibraries = (cb: () => GetLibrariesReply) =>
+    ipcMain.on(GET_LIBRARIES, (e) => (e.returnValue = cb()));
+
+  static onGetCurrentLibraryPath = (cb: () => string) =>
+    ipcMain.on(GET_CURRENT_LIBRARY_PATH, (e) => (e.returnValue = cb()));
+
+  static onCreateLibrary = (
+    cb: (msg: CreateLibraryMessage) => Promise<CreateLibraryReply>,
+  ) => ipcMain.handle(CREATE_LIBRARY, (_, msg: CreateLibraryMessage) => cb(msg));
+
+  static onSwitchLibrary = (cb: (msg: SwitchLibraryMessage) => void) =>
+    ipcMain.on(SWITCH_LIBRARY, (_, msg: SwitchLibraryMessage) => cb(msg));
+
+  static onRemoveLibrary = (cb: (msg: RemoveLibraryMessage) => void) =>
+    ipcMain.handle(REMOVE_LIBRARY, (_, msg: RemoveLibraryMessage) => cb(msg));
+
+  static onRenameLibrary = (cb: (msg: RenameLibraryMessage) => void) =>
+    ipcMain.handle(RENAME_LIBRARY, (_, msg: RenameLibraryMessage) => cb(msg));
 }

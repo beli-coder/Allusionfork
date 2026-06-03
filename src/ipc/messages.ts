@@ -119,3 +119,37 @@ export const GET_VERSION = 'GET_VERSION';
 export const CHECK_FOR_UPDATES = 'CHECK_FOR_UPDATES';
 export const TOGGLE_CHECK_UPDATES_ON_STARTUP = 'TOGGLE_CHECK_UPDATES_ON_STARTUP';
 export const IS_CHECK_UPDATES_ON_STARTUP_ENABLED = 'IS_CHECK_UPDATES_ON_STARTUP_ENABLED';
+
+//////////////////// Library Management ////////////////////
+export const GET_LIBRARIES = 'GET_LIBRARIES';
+export const GET_CURRENT_LIBRARY_PATH = 'GET_CURRENT_LIBRARY_PATH';
+export const CREATE_LIBRARY = 'CREATE_LIBRARY';
+export const SWITCH_LIBRARY = 'SWITCH_LIBRARY';
+export const REMOVE_LIBRARY = 'REMOVE_LIBRARY';
+export const RENAME_LIBRARY = 'RENAME_LIBRARY';
+
+export type LibraryEntry = {
+  id: string;
+  name: string;
+  path: string;
+  lastOpened: string;
+};
+export type GetLibrariesReply = {
+  entries: LibraryEntry[];
+  currentPath: string;
+};
+export type CreateLibraryMessage = {
+  name: string;
+  path: string;
+};
+export type CreateLibraryReply = { entry: LibraryEntry } | { error: string };
+export type SwitchLibraryMessage = {
+  path: string;
+};
+export type RemoveLibraryMessage = {
+  id: string;
+};
+export type RenameLibraryMessage = {
+  id: string;
+  name: string;
+};

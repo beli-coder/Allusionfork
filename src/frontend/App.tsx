@@ -9,6 +9,7 @@ import { Toaster as CustomToaster } from './components/Toaster';
 
 import AdvancedSearchDialog from './containers/AdvancedSearch';
 import Settings from './containers/Settings';
+import LibraryManager from './containers/LibraryManager';
 
 import { useWorkerListener } from './image/ThumbnailGeneration';
 import WindowTitlebar from './containers/WindowTitlebar';
@@ -62,6 +63,8 @@ const App = observer(() => {
             <HelpCenter />
 
             <About />
+
+            <LibraryManager />
 
             <AdvancedSearchDialog />
 

@@ -1,4 +1,3 @@
-import { app } from 'electron';
 import fse from 'fs-extra';
 import http, { Server } from 'http';
 import path from 'path';
@@ -10,11 +9,6 @@ import { TagDTO } from '../api/tag';
  * The clip server hosts endpoints for our browser extension to import images,
  * optionally including metadata such as tags.
  */
-
-// Contains a single preferences JSON object
-const preferencesFilePath = path.join(app.getPath('userData'), 'clipPreferences.json');
-// Contains a IImportItem JSON object per line, added when importing images while the main window is closed
-const importQueueFilePath = path.join(app.getPath('userData'), 'importQueue.txt');
 
 export interface IImportItem {
   // Path relative to the import location
@@ -71,27 +65,33 @@ class ClipServer {
     importLocation: '',
   };
 
+  private readonly preferencesFilePath: string;
+  private readonly importQueueFilePath: string;
   private server: Server | null = null;
   private importImage: (item: IImportItem) => Promise<boolean>;
   private addTagsToFile: (item: IImportItem) => Promise<boolean>;
   private requestTags: () => Promise<TagDTO[]>;
 
   /**
+   * @param basePath The resolved userData directory for the current library instance.
    * @param importImage A callback function that imports an image in the database - returns false when database is not accessible.
    * @param addTagsToFile A callback that adds tags to a previously imported image
    * @param requestTags A callback that retrieves all tags stored in the database
    */
   constructor(
+    basePath: string,
     importImage: (item: IImportItem) => Promise<boolean>,
     addTagsToFile: (item: IImportItem) => Promise<boolean>,
     requestTags: () => Promise<TagDTO[]>,
   ) {
+    this.preferencesFilePath = path.join(basePath, 'clipPreferences.json');
+    this.importQueueFilePath = path.join(basePath, 'importQueue.txt');
     this.importImage = importImage;
     this.addTagsToFile = addTagsToFile;
     this.requestTags = requestTags;
 
-    if (fse.existsSync(preferencesFilePath)) {
-      const existingPrefs = fse.readJSONSync(preferencesFilePath);
+    if (fse.existsSync(this.preferencesFilePath)) {
+      const existingPrefs = fse.readJSONSync(this.preferencesFilePath);
       this.preferences = {
         ...this.preferences,
         ...existingPrefs,
@@ -132,10 +132,10 @@ class ClipServer {
   }
 
   async getImportQueue(): Promise<IImportItem[]> {
-    if (!(await fse.pathExists(importQueueFilePath))) {
+    if (!(await fse.pathExists(this.importQueueFilePath))) {
       return [];
     }
-    const fileContent = await fse.readFile(importQueueFilePath, 'utf8');
+    const fileContent = await fse.readFile(this.importQueueFilePath, 'utf8');
     const items = fileContent
       .trim()
       .split('\n')
@@ -144,7 +144,7 @@ class ClipServer {
   }
 
   async clearImportQueue(): Promise<void> {
-    fse.remove(importQueueFilePath);
+    fse.remove(this.importQueueFilePath);
   }
 
   async storeImageWithoutImport(directory: string, filename: string, imgBase64: string) {
@@ -268,18 +268,18 @@ class ClipServer {
 
   // When the window is not open, add the request to a queue so that it can get imported when the window opens
   private async enqueue(item: IImportItem) {
-    await fse.appendFile(importQueueFilePath, `${JSON.stringify(item)}\n`);
+    await fse.appendFile(this.importQueueFilePath, `${JSON.stringify(item)}\n`);
   }
 
   private async replaceLastQueueItem(item: IImportItem) {
-    const fileContent = await fse.readFile(importQueueFilePath, 'utf8');
+    const fileContent = await fse.readFile(this.importQueueFilePath, 'utf8');
     let lines = fileContent.split('\n');
     if (lines.length > 1) {
       lines[lines.length - 1] = `${JSON.stringify(item)}`;
     } else {
       lines = [`${JSON.stringify(item)}`, ''];
     }
-    await fse.writeFile(importQueueFilePath, lines.join('\n'));
+    await fse.writeFile(this.importQueueFilePath, lines.join('\n'));
   }
 
   private async storeImage(directory: string, downloadPath: string, imgBase64: string) {
@@ -289,7 +289,7 @@ class ClipServer {
   }
 
   private savePreferences() {
-    fse.writeJSONSync(preferencesFilePath, this.preferences);
+    fse.writeJSONSync(this.preferencesFilePath, this.preferences);
   }
 }
 
