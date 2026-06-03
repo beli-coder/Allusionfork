@@ -1,4 +1,5 @@
 import fse from 'fs-extra';
+import { randomUUID } from 'crypto';
 import path from 'path';
 
 export type LibraryEntry = {
@@ -74,7 +75,7 @@ export class LibraryRegistry {
       return existing;
     }
     const entry: LibraryEntry = {
-      id: globalThis.crypto.randomUUID(),
+      id: randomUUID(),
       name,
       path: libraryPath,
       lastOpened: new Date().toISOString(),
