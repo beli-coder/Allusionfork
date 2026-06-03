@@ -17,6 +17,9 @@ import {
 import { ClientTag } from '../../entities/Tag';
 import { LocationTreeItemRevealer } from '../Outliner/LocationsPanel';
 import { TagsTreeItemRevealer } from '../Outliner/TagsPanel/TagsTree';
+import { ClientExtraProperty } from 'src/frontend/entities/ExtraProperty';
+import { isFileExtensionVideo } from 'common/fs';
+import { runInAction } from 'mobx';
 
 export const MissingFileMenuItems = observer(() => {
   const { uiStore, fileStore } = useStore();
@@ -28,13 +31,23 @@ export const MissingFileMenuItems = observer(() => {
         icon={IconSet.WARNING_BROKEN_LINK}
         disabled={fileStore.showsMissingContent}
       />
+      <MenuItem onClick={uiStore.copyTagsToClipboard} text="Copy Tags" icon={IconSet.TAG_GROUP} />
       <MenuItem onClick={uiStore.openToolbarFileRemover} text="Delete" icon={IconSet.DELETE} />
     </>
   );
 });
 
 export const FileViewerMenuItems = ({ file }: { file: ClientFile }) => {
-  const { uiStore, locationStore } = useStore();
+  const { uiStore, locationStore, fileStore } = useStore();
+
+  const handleClearSelectedFileTags = () => {
+    // Currently copy tags to clipboard as backup in case of error by the user
+    // ToDo: add a confirm dialog?
+    uiStore.copyTagsToClipboard();
+    runInAction(() => {
+      uiStore.fileSelection.forEach((f) => f.clearTags());
+    });
+  };
 
   const handleViewFullSize = () => {
     uiStore.selectFile(file, true);
@@ -59,18 +72,53 @@ export const FileViewerMenuItems = ({ file }: { file: ClientFile }) => {
     }
   };
 
+  const handleCopyImageToClipboard = () => {
+    uiStore.selectFile(file, true);
+    uiStore.copyImageToClipboard();
+  };
+
   return (
     <>
       <MenuItem onClick={handleViewFullSize} text="View at Full Size" icon={IconSet.SEARCH} />
+      <MenuItem
+        onClick={handleCopyImageToClipboard}
+        text="Copy Image to Clipboard"
+        icon={IconSet.COPY}
+        disabled={isFileExtensionVideo(file.extension)}
+      />
       <MenuItem
         onClick={handlePreviewWindow}
         text="Open In Preview Window"
         icon={IconSet.PREVIEW}
       />
+      <MenuSubItem text="Tagging..." icon={IconSet.TAG_ADD}>
+        <MenuItem
+          onClick={uiStore.openFileTagsEditor}
+          text="Open Tag Selector"
+          icon={IconSet.TAG}
+        />
+        <MenuItem
+          onClick={fileStore.readTagsFromSelectedFiles}
+          text="Import Tags From Selected Files Metadata"
+          icon={IconSet.TAG_ADD}
+        />
+        <MenuItem
+          onClick={fileStore.writeTagsToSelectedFiles}
+          text="Overwrite Tags in Selected Files Metadata"
+          icon={IconSet.WARNING}
+        />
+        <MenuItem
+          onClick={handleClearSelectedFileTags}
+          text="Clear Selected Files Tags (and copy tags)"
+          icon={IconSet.TAG_BLANCO}
+        />
+      </MenuSubItem>
+      <MenuItem onClick={uiStore.copyTagsToClipboard} text="Copy Tags" icon={IconSet.TAG_GROUP} />
       <MenuItem
-        onClick={uiStore.openToolbarTagPopover}
-        text="Open Tag Selector"
-        icon={IconSet.TAG}
+        onClick={uiStore.pasteTags}
+        text="Paste Tags"
+        icon={IconSet.TAG_GROUP_OPEN}
+        disabled={uiStore.isTagClipboardEmpty()}
       />
       <MenuSubItem text="Search Similar Images..." icon={IconSet.MORE}>
         <MenuItem
@@ -169,8 +217,36 @@ export const SlideFileViewerMenuItems = observer(({ file }: { file: ClientFile }
     uiStore.openPreviewWindow();
   };
 
+  const handleCopyImageToClipboard = () => {
+    uiStore.selectFile(file, true);
+    uiStore.copyImageToClipboard();
+  };
+
+  const handleCopyTagsToClipboard = () => {
+    uiStore.selectFile(file, true);
+    uiStore.copyTagsToClipboard();
+  };
+
+  const handlePasteTags = () => {
+    uiStore.selectFile(file, true);
+    uiStore.pasteTags();
+  };
+
   return (
     <>
+      <MenuItem
+        onClick={handleCopyImageToClipboard}
+        text="Copy Image to Clipboard"
+        icon={IconSet.COPY}
+        disabled={isFileExtensionVideo(file.extension)}
+      />
+      <MenuItem onClick={handleCopyTagsToClipboard} text="Copy Tags" icon={IconSet.TAG_GROUP} />
+      <MenuItem
+        onClick={handlePasteTags}
+        text="Paste Tags"
+        icon={IconSet.TAG_GROUP_OPEN}
+        disabled={uiStore.isTagClipboardEmpty()}
+      />
       <MenuItem
         onClick={handlePreviewWindow}
         text="Open In Preview Window"
@@ -224,18 +300,89 @@ export const ExternalAppMenuItems = observer(({ file }: { file: ClientFile }) =>
   );
 });
 
-export const FileTagMenuItems = observer(({ file, tag }: { file: ClientFile; tag: ClientTag }) => (
-  <>
-    <MenuItem
-      onClick={() => TagsTreeItemRevealer.instance.revealTag(tag)}
-      text="Reveal in Tags Panel"
-      icon={IconSet.TREE_LIST}
-      disabled={file.isBroken}
-    />
-    <MenuItem
-      onClick={() => file.removeTag(tag)}
-      text="Unassign Tag from File"
-      icon={IconSet.TAG_BLANCO}
-    />
-  </>
-));
+export const FileTagMenuItems = observer(({ file, tag }: { file?: ClientFile; tag: ClientTag }) => {
+  const { uiStore } = useStore();
+  return (
+    <>
+      <MenuItem
+        onClick={() => TagsTreeItemRevealer.instance.revealTag(tag)}
+        text="Reveal in Tags Panel"
+        icon={IconSet.TREE_LIST}
+        disabled={file ? file.isBroken : false}
+      />
+      <MenuItem
+        onClick={() => uiStore.openTagPropertiesEditor(tag)}
+        text="Edit Tag"
+        icon={IconSet.EDIT}
+      />
+      <MenuItem
+        onClick={() => file && file.removeTag(tag)}
+        text="Unassign Tag from File"
+        icon={IconSet.TAG_BLANCO}
+      />
+    </>
+  );
+});
+
+export const EditorTagSummaryItems = ({
+  tag,
+  beforeSelect,
+}: {
+  tag: ClientTag;
+  beforeSelect: () => void;
+}) => {
+  const { uiStore } = useStore();
+  return (
+    <>
+      <MenuItem
+        onClick={() => {
+          beforeSelect();
+          TagsTreeItemRevealer.instance.revealTag(tag);
+        }}
+        text="Reveal in Tags Panel"
+        icon={IconSet.TREE_LIST}
+      />
+      <MenuItem
+        onClick={() => {
+          beforeSelect();
+          uiStore.openTagPropertiesEditor(tag);
+        }}
+        text="Edit Tag"
+        icon={IconSet.EDIT}
+      />
+    </>
+  );
+};
+
+export const FileExtraPropertyMenuItems = observer(
+  ({
+    extraProperty,
+    onDelete,
+    onRemove,
+    onRename,
+  }: {
+    extraProperty: ClientExtraProperty;
+    onDelete: (extraProperty: ClientExtraProperty) => void;
+    onRemove: (extraProperty: ClientExtraProperty) => void;
+    onRename: (extraProperty: ClientExtraProperty) => void;
+  }) => {
+    const { uiStore } = useStore();
+
+    const isMultiple = uiStore.fileSelection.size > 1;
+    return (
+      <>
+        <MenuItem
+          onClick={() => onRemove(extraProperty)}
+          text={`Remove extra property from ${isMultiple ? 'files' : 'file'}`}
+          icon={IconSet.CLOSE}
+        />
+        <MenuItem onClick={() => onRename(extraProperty)} text="Rename" icon={IconSet.EDIT} />
+        <MenuItem
+          onClick={() => onDelete(extraProperty)}
+          text="Delete extra property and remove it from all files"
+          icon={IconSet.DELETE}
+        />
+      </>
+    );
+  },
+);

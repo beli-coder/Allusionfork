@@ -1,6 +1,33 @@
-[![Build Status](https://travis-ci.com/allusion-app/Allusion.svg?token=a7yw4czL1Lye2zty617R&branch=master)](https://travis-ci.com/allusion-app/Allusion)
+<img alt="Allusion" src="./screenshot.jpg"/>
 
-<img alt="Allusion" src="./resources/images/helpcenter/logo-about-helpcenter-dark.jpg" width="250" />
+Fork of [Allusion](https://github.com/allusion-app/Allusion/) with:
+- Video support.
+  - Video and GIF playback options.
+- Implied tag relationships.
+  - Automatic inheritance of implied tags.
+  - Fully compatible with advanced search.
+- Extra Properties.
+  - Allows you to define extra properties for files.
+  - Sort files by their extra property values.
+  - Use those extra properties in advanced searches.
+- Quality of life improvements.
+  - Refresh hotkey.
+  - Fixed weird behavior in the tags tree when dragging/dropping or expanding items.
+  - Versatile tag selection in the tags tree using and combining modifier keys.
+    - Hold Alt to select whole tag collections (a tag and its sub-tags); otherwise, only select visible tags.
+    - Hold Command/Control to enable additive/subtractive selection.
+    - Hold Shift to enable selecting multiple items in range.
+  - Improved thumbnail updates when files change.
+  - Retry thumbnail generation when it takes too long.
+  - Tag editor can be moved to the side in the main gallery.
+  - Find tags using the contextual menu in the tag editor.
+  - Adjustable padding for thumbnails in the gallery.
+  - Multiple optimizations and bug fixes.
+  - And more — see the changelogs in the releases page for more details.
+        
+Thanks to the developers and the community for your hard work! ❤️
+
+---
 
 Allusion is a tool built for artists, aimed to help you organize your **Visual Library** – A single place that contains your entire collection of references, inspiration and any other kinds of images.
 
@@ -8,8 +35,9 @@ Allusion is a tool built for artists, aimed to help you organize your **Visual L
 
 ## Installation
 
-Find the latest version of Allusion on the [Releases](https://github.com/allusion-app/Allusion/releases) page.
-The application can be automatically updated when a new version becomes available.
+
+Find the latest version of Allusion on the [Releases](https://github.com/RafaUC/Allusion/releases) page.
+
 
 ## Development
 
@@ -25,8 +53,7 @@ Then run the following commands to get started:
 ### Release Build
 
 An installable executable can be built using `yarn package` for your platform in the `/dist` folder. The building is performed using the [electron-builder](https://www.electron.build/) package, and is configured by a section in the `package.json` file.
-Builds are automatically published to Github Releases when a tag is created in GitHub.
 
 ## Further Information
 
-Anything related from documentation to frequently asked questions can be found in our [wiki](https://github.com/allusion-app/Allusion/wiki).
+The original repo had a [wiki] with documentation (https://github.com/allusion-app/Allusion/wiki).

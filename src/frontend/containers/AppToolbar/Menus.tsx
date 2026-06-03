@@ -4,10 +4,13 @@ import { observer } from 'mobx-react-lite';
 import { OrderBy, OrderDirection } from 'src/api/data-storage-search';
 import { FileDTO } from 'src/api/file';
 import { IconSet, KeyCombo } from 'widgets';
-import { MenuButton, MenuRadioGroup, MenuRadioItem } from 'widgets/menus';
+import { MenuButton, MenuRadioGroup, MenuRadioItem, MenuSubItem } from 'widgets/menus';
 import { getThumbnailSize } from '../ContentView/utils';
-import { MenuDivider, MenuSliderItem } from 'widgets/menus/menu-items';
+import { MenuCheckboxItem, MenuDivider, MenuSliderItem } from 'widgets/menus/menu-items';
 import { useStore } from 'src/frontend/contexts/StoreContext';
+import { ExtraPropertySelector } from 'src/frontend/components/ExtraPropertySelector';
+import { ClientExtraProperty } from 'src/frontend/entities/ExtraProperty';
+import { useComputed } from 'src/frontend/hooks/mobx';
 
 // Tooltip info
 const enum Tooltip {
@@ -43,6 +46,7 @@ export const ViewCommand = () => {
       <MenuDivider />
 
       <ThumbnailSizeSliderMenuItem />
+      <ThumbnailPaddingSizeSliderMenuItem />
     </MenuButton>
   );
 };
@@ -64,24 +68,78 @@ const sortMenuData: Array<{
   { prop: 'random', icon: IconSet.RELOAD_COMPACT, text: 'Random', hideDirection: true },
 ];
 
+const sortExtraPropertyData: {
+  prop: OrderBy<FileDTO>;
+  icon: JSX.Element;
+  text: string;
+  hideDirection?: boolean;
+} = { prop: 'extraProperty', icon: IconSet.META_INFO, text: 'Extra Property' };
+
 export const SortMenuItems = observer(() => {
-  const { fileStore } = useStore();
-  const { orderDirection: fileOrder, orderBy, orderFilesBy, switchOrderDirection } = fileStore;
+  const { fileStore, extraPropertyStore } = useStore();
+  const {
+    orderDirection: fileOrder,
+    orderBy,
+    orderByExtraProperty,
+    orderFilesBy,
+    orderFilesByExtraProperty,
+    switchOrderDirection,
+  } = fileStore;
   const orderIcon = fileOrder === OrderDirection.Desc ? IconSet.ARROW_DOWN : IconSet.ARROW_UP;
 
+  const counter = useComputed(() => {
+    const extraProperty = extraPropertyStore.get(fileStore.orderByExtraProperty);
+    const counter = new Map<ClientExtraProperty, [number, number | undefined]>();
+    if (extraProperty) {
+      counter.set(extraProperty, [1, 0]);
+    }
+    return counter;
+  });
+
   return (
-    <MenuRadioGroup>
-      {sortMenuData.map(({ prop, icon, text, hideDirection }) => (
-        <MenuRadioItem
-          key={prop}
-          icon={icon}
-          text={text}
-          checked={orderBy === prop}
-          accelerator={orderBy === prop && !hideDirection ? orderIcon : undefined}
-          onClick={() => (orderBy === prop ? switchOrderDirection() : orderFilesBy(prop))}
-        />
-      ))}
-    </MenuRadioGroup>
+    <>
+      <MenuCheckboxItem
+        text="Use natural ordering"
+        checked={fileStore.isNaturalOrderingEnabled}
+        onClick={fileStore.toggleNaturalOrdering}
+      />
+      <MenuRadioGroup>
+        {[
+          ...sortMenuData.map(({ prop, icon, text, hideDirection }) => (
+            <MenuRadioItem
+              key={prop}
+              icon={icon}
+              text={text}
+              checked={orderBy === prop}
+              accelerator={orderBy === prop && !hideDirection ? orderIcon : undefined}
+              onClick={() => (orderBy === prop ? switchOrderDirection() : orderFilesBy(prop))}
+            />
+          )),
+          <MenuSubItem
+            key={sortExtraPropertyData.prop}
+            icon={sortExtraPropertyData.icon}
+            text={sortExtraPropertyData.text}
+            checked={orderBy === sortExtraPropertyData.prop}
+            accelerator={
+              orderBy === sortExtraPropertyData.prop && !sortExtraPropertyData.hideDirection ? (
+                orderIcon
+              ) : (
+                <></>
+              )
+            }
+          >
+            <ExtraPropertySelector
+              counter={counter}
+              onSelect={(extraProperty: ClientExtraProperty) =>
+                orderByExtraProperty === extraProperty.id
+                  ? switchOrderDirection()
+                  : orderFilesByExtraProperty(extraProperty)
+              }
+            />
+          </MenuSubItem>,
+        ]}
+      </MenuRadioGroup>
+    </>
   );
 });
 
@@ -93,6 +151,30 @@ const thumbnailSizeOptions = [
   { value: 448 },
   { value: 528, label: 'Large' },
   { value: 608 },
+];
+
+const thumbnailPaddingSizeOptions = [
+  { value: 0, label: '0' },
+  { value: 1 },
+  { value: 2 },
+  { value: 3 },
+  { value: 4 },
+  { value: 5 },
+  { value: 6 },
+  { value: 7 },
+  { value: 8 },
+  { value: 9 },
+  { value: 10, label: '10' },
+  { value: 11 },
+  { value: 12 },
+  { value: 13 },
+  { value: 14 },
+  { value: 15 },
+  { value: 16 },
+  { value: 17 },
+  { value: 18 },
+  { value: 19 },
+  { value: 20, label: '20' },
 ];
 
 export const LayoutMenuItems = observer(() => {
@@ -144,6 +226,22 @@ export const ThumbnailSizeSliderMenuItem = observer(() => {
       min={thumbnailSizeOptions[0].value}
       max={thumbnailSizeOptions[thumbnailSizeOptions.length - 1].value}
       step={20}
+    />
+  );
+});
+
+export const ThumbnailPaddingSizeSliderMenuItem = observer(() => {
+  const { uiStore } = useStore();
+  return (
+    <MenuSliderItem
+      value={uiStore.masonryItemPadding}
+      label="Thumbnail padding size"
+      onChange={uiStore.setMasonryItemPadding}
+      id="thumbnail-padding-sizes"
+      options={thumbnailPaddingSizeOptions}
+      min={thumbnailPaddingSizeOptions[0].value}
+      max={thumbnailPaddingSizeOptions[thumbnailPaddingSizeOptions.length - 1].value}
+      step={1}
     />
   );
 });

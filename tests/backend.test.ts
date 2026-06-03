@@ -21,7 +21,12 @@ describe('Backend', () => {
     dateAdded: new Date(),
     color: '',
     subTags: [],
+    impliedTags: [],
     isHidden: false,
+    isVisibleInherited: false,
+    aliases: [],
+    description: '',
+    isHeader: false,
   };
 
   const mockLocationPath = 'c:/test';
@@ -41,11 +46,14 @@ describe('Backend', () => {
         dateAdded: new Date(),
         dateModified: new Date(),
         dateCreated: new Date(),
+        OrigDateModified: new Date(),
         dateLastIndexed: new Date(),
         extension: 'jpg',
         ino: index.toString(),
         id: index.toString(),
         tags: [],
+        extraPropertyIDs: [],
+        extraProperties: {},
       });
     }
 
@@ -70,7 +78,7 @@ describe('Backend', () => {
           { ...mockFile2, tags: [mockTag.id] },
         ]);
         await backend.removeTags([mockTag.id]);
-        const dbFiles = await backend.fetchFiles('id', OrderDirection.Desc);
+        const dbFiles = await backend.fetchFiles('id', OrderDirection.Desc, false);
         expect(dbFiles).toHaveLength(2);
         expect(dbFiles[0].tags).toHaveLength(0);
         expect(dbFiles[1].tags).toHaveLength(0);
@@ -88,7 +96,7 @@ describe('Backend', () => {
         ]);
         await backend.removeTags(['tag1']);
 
-        const dbFiles = await backend.fetchFiles('id', OrderDirection.Desc);
+        const dbFiles = await backend.fetchFiles('id', OrderDirection.Desc, false);
 
         expect(dbFiles).toHaveLength(1);
 
@@ -111,7 +119,7 @@ describe('Backend', () => {
         ]);
         await backend.removeTags(['tag1', 'tag3']);
 
-        const dbFiles = await backend.fetchFiles('id', OrderDirection.Desc);
+        const dbFiles = await backend.fetchFiles('id', OrderDirection.Desc, false);
 
         expect(dbFiles).toHaveLength(1);
 

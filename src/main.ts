@@ -39,6 +39,7 @@ const libraryRegistry = LibraryRegistry.create();
 
 const preferencesFilePath = path.join(basePath, 'preferences.json');
 const windowStateFilePath = path.join(basePath, 'windowState.json');
+const logFilePath = path.join(basePath, 'app.log');
 
 type PreferencesFile = {
   checkForUpdatesOnStartup?: boolean;
@@ -55,6 +56,20 @@ let tray: Tray | null = null;
 let clipServer: ClipServer | null = null;
 
 function initialize() {
+  console.log('Initializing Allusion...');
+
+  // Disable spellchecker languages and block any download requests for spellcheck dictionaries *.bdic
+  // TODO: Currently there are no spellchecker enhanced features implemented, like contextual menu
+  // options or configurations, and it becomes annoying for users who use multiple languages or words not in the dictionary.
+  // Maybe in the future it would be nice to have those features and allow configuring the spellchecker.
+  session.defaultSession.setSpellCheckerLanguages([]);
+  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    if (details.url.includes('.bdic')) {
+      return callback({ cancel: true });
+    }
+    callback({});
+  });
+
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     if (details.responseHeaders === undefined) {
       callback({});
@@ -104,6 +119,7 @@ function createWindow() {
       nodeIntegrationInWorker: true,
       nodeIntegrationInSubFrames: true,
       contextIsolation: false,
+      spellcheck: false,
     },
     minWidth: MIN_WINDOW_WIDTH,
     minHeight: MIN_WINDOW_HEIGHT,
@@ -237,7 +253,7 @@ function createWindow() {
       {
         label: 'Refresh',
         accelerator: 'F5',
-        click: (_, win) => win?.webContents.reload(),
+        click: (_, win) => (win ? MainMessenger.f5Reload(win.webContents, true) : undefined),
       },
       { role: 'toggleDevTools' },
       { type: 'separator' },
@@ -246,7 +262,7 @@ function createWindow() {
         accelerator: 'CommandOrControl+0',
         click: (_, browserWindow) => {
           if (browserWindow) {
-            browserWindow.webContents.zoomFactor = 1;
+            MainMessenger.setZoomFactor(browserWindow.webContents, 1);
           }
         },
       },
@@ -256,7 +272,8 @@ function createWindow() {
         accelerator: 'CommandOrControl+=',
         click: (_, browserWindow) => {
           if (browserWindow !== undefined) {
-            browserWindow.webContents.setZoomFactor(
+            MainMessenger.setZoomFactor(
+              browserWindow.webContents,
               Math.min(browserWindow.webContents.zoomFactor + 0.1, MAX_ZOOM_FACTOR),
             );
           }
@@ -267,7 +284,8 @@ function createWindow() {
         accelerator: 'CommandOrControl+-',
         click: (_, browserWindow) => {
           if (browserWindow !== undefined) {
-            browserWindow.webContents.setZoomFactor(
+            MainMessenger.setZoomFactor(
+              browserWindow.webContents,
               Math.max(browserWindow.webContents.zoomFactor - 0.1, MIN_ZOOM_FACTOR),
             );
           }
@@ -496,9 +514,8 @@ autoUpdater.on('update-available', async (info: UpdateInfo) => {
     return;
   }
 
-  const message = `Update available: ${
-    info.releaseName || info.version
-  }:\nDo you wish to update now?`;
+  const message = `Update available: ${info.releaseName || info.version
+    }:\nDo you wish to update now?`;
   // info.releaseNotes attribute is HTML, could show that in renderer at some point
 
   const dialogResult = await dialog.showMessageBox(mainWindow, {
@@ -511,7 +528,7 @@ autoUpdater.on('update-available', async (info: UpdateInfo) => {
   if (dialogResult.response === 0) {
     autoUpdater.downloadUpdate();
   } else if (dialogResult.response === 2) {
-    shell.openExternal('https://github.com/allusion-app/Allusion/releases/latest');
+    shell.openExternal('https://github.com/RafaUC/Allusion/releases/latest');
   }
 });
 
@@ -558,9 +575,8 @@ autoUpdater.on('download-progress', (progressObj: { percent: number }) => {
 process.on('uncaughtException', async (error) => {
   console.error('Uncaught exception', error);
 
-  const errorMessage = `An unexpected error occurred. Please file a bug report if you think this needs fixing!\n${
-    error.stack?.includes(error.message) ? '' : `${error.name}: ${error.message.slice(0, 200)}\n`
-  }\n${error.stack?.slice(0, 300)}`;
+  const errorMessage = `An unexpected error occurred. Please file a bug report if you think this needs fixing!\n${error.stack?.includes(error.message) ? '' : `${error.name}: ${error.message.slice(0, 200)}\n`
+    }\n${error.stack?.slice(0, 300)}`;
 
   try {
     if (mainWindow != null && !mainWindow.isDestroyed()) {
@@ -650,30 +666,46 @@ MainMessenger.onSendPreviewFiles((msg) => {
 // Set native window theme (frame, menu bar)
 MainMessenger.onSetTheme((msg) => (nativeTheme.themeSource = msg.theme));
 
+async function tryCreateIcon(
+  absolutePath: string,
+  method: 'ThumbnailFromPath' | 'FromPath',
+  description: string,
+) {
+  try {
+    let icon;
+    if (method === 'ThumbnailFromPath') {
+      icon = await nativeImage.createThumbnailFromPath(absolutePath, { width: 150, height: 150 });
+    } else {
+      icon = nativeImage.createFromPath(absolutePath);
+    }
+    if (icon.isEmpty()) {
+      throw new Error('Image is empty');
+    }
+    icon = icon.resize({ width: 150 });
+    return icon;
+  } catch (e) {
+    console.error(`Could not create ${description}`, e);
+    return null;
+  }
+}
+
+async function getPreviewIcon(absolutePath: string) {
+  let icon = await tryCreateIcon(absolutePath, 'ThumbnailFromPath', 'thumbnail drag icon');
+  if (!icon) {
+    icon = await tryCreateIcon(absolutePath, 'FromPath', 'fallback resized icon');
+  }
+  if (!icon) {
+    const fallbackIconPath = path.join(__dirname, TrayIcon);
+    icon = await tryCreateIcon(fallbackIconPath, 'FromPath', 'fallback tray icon');
+  }
+  return icon || nativeImage.createEmpty();
+}
+
 MainMessenger.onDragExport(async (absolutePaths) => {
   if (mainWindow === null || absolutePaths.length === 0) {
     return;
   }
-
-  let previewIcon = nativeImage.createEmpty();
-  try {
-    previewIcon = await nativeImage.createThumbnailFromPath(absolutePaths[0], {
-      width: 200,
-      height: 200,
-    });
-  } catch (e) {
-    console.error('Could not create drag icon', absolutePaths[0], e);
-    try {
-      const fallbackIconPath = path.join(__dirname, TrayIcon);
-      previewIcon = await nativeImage.createThumbnailFromPath(fallbackIconPath, {
-        width: 200,
-        height: 200,
-      });
-    } catch (e) {
-      console.error('Could not create fallback drag icon', TrayIcon, e);
-    }
-  }
-
+  const previewIcon = await getPreviewIcon(absolutePaths[0]);
   mainWindow.webContents.startDrag({
     file: absolutePaths[0],
     files: absolutePaths,

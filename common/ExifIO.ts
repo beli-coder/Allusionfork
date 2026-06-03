@@ -57,7 +57,11 @@ console.log('Exif tool path: ', EXIF_TOOL_PATH);
 const ep = new exiftool.ExiftoolProcess(EXIF_TOOL_PATH);
 
 const defaultWriteArgs = [
-  'overwrite_original', // added this because it was leaving behind duplicate files (with _original appended to filename)
+  // overwrite_original to prevent duplicate files appearing.
+  // in_place to prevent changing the file's inode number,
+  // which would desync with the database
+  // and break detection of renamed files
+  'overwrite_original_in_place',
   'codedcharacterset=utf8', // needed for adobe products: https://www.npmjs.com/package/node-exiftool#writing-tags-for-adobe-in-utf8
   'P', // for preserving the modified date of files
 ];
@@ -158,6 +162,18 @@ class ExifIO {
     );
   }
 
+  async readExtraProperties(filepath: string): Promise<string | undefined> {
+    const metadata = await ep.readMetadata(filepath, [
+      'XMP-xmp:ExtraProperties',
+      ...this.extraArgs,
+    ]);
+    if (metadata.error || !metadata.data?.[0]) {
+      throw new Error(metadata.error || 'No metadata entry');
+    }
+    const extraPropertiesRaw = metadata.data[0].ExtraProperties ?? undefined;
+    return extraPropertiesRaw;
+  }
+
   async readExifTags(filepath: string, tags: string[]): Promise<(string | undefined)[]> {
     const metadata = await ep.readMetadata(filepath, [...tags, ...this.extraArgs]);
     if (metadata.error || !metadata.data?.[0]) {
@@ -186,7 +202,11 @@ class ExifIO {
   // }
 
   /** Overwrites the tags of a specific file */
-  @action.bound async writeTags(filepath: string, tagNameHierarchy: string[][]): Promise<void> {
+  @action.bound async writeTags(
+    filepath: string,
+    tagNameHierarchy: string[][],
+    extraPropertiesJson: string,
+  ): Promise<void> {
     // TODO: Could also write the meta-metadata, e.g.:
     // History Action                  : saved
     // History Instance ID             : xmp.iid:14020DA03863EB11B2D999D21045C35B
@@ -204,6 +224,7 @@ class ExifIO {
     const subject = tagNameHierarchy.map((entry) => entry[entry.length - 1]);
 
     console.debug('Writing', tagNameHierarchy.join(', '), 'to', filepath);
+    console.debug('Writing extra properties', extraPropertiesJson, 'to', filepath);
 
     const res = await ep.writeMetadata(
       filepath,
@@ -214,6 +235,7 @@ class ExifIO {
         Subject: subject,
         Keywords: subject,
         // History: {},
+        'XMP-xmp:ExtraProperties': extraPropertiesJson,
       },
       [...defaultWriteArgs, ...this.extraArgs],
     );

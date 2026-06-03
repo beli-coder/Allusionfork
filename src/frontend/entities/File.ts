@@ -3,8 +3,10 @@ import {
   IReactionDisposer,
   makeObservable,
   observable,
+  computed,
   ObservableSet,
   reaction,
+  ObservableMap,
 } from 'mobx';
 import Path from 'path';
 
@@ -14,6 +16,12 @@ import ImageLoader from '../image/ImageLoader';
 import FileStore from '../stores/FileStore';
 import { FileStats } from '../stores/LocationStore';
 import { ClientTag } from './Tag';
+import { ClientExtraProperty } from './ExtraProperty';
+import {
+  ExtraProperties,
+  ExtraPropertyValue,
+  getExtraPropertyDefaultValue,
+} from 'src/api/extraProperty';
 
 /** Retrieved file meta data information */
 interface IMetaData {
@@ -27,6 +35,11 @@ interface IMetaData {
   height: number;
   /** Date when this file was created (from the OS, not related to Allusion) */
   dateCreated: Date;
+}
+
+export interface Dimensions {
+  width: number;
+  height: number;
 }
 
 /**
@@ -45,12 +58,14 @@ export class ClientFile {
   readonly relativePath: string;
   readonly absolutePath: string;
   readonly tags: ObservableSet<ClientTag>;
+  readonly extraProperties: ObservableMap<ClientExtraProperty, ExtraPropertyValue>;
   readonly size: number;
   readonly width: number;
   readonly height: number;
   readonly dateAdded: Date;
   readonly dateCreated: Date;
   readonly dateModified: Date;
+  readonly OrigDateModified: Date;
   readonly dateLastIndexed: Date;
   readonly name: string;
   readonly extension: IMG_EXTENSIONS_TYPE;
@@ -75,6 +90,7 @@ export class ClientFile {
     this.dateAdded = fileProps.dateAdded;
     this.dateCreated = fileProps.dateCreated;
     this.dateModified = fileProps.dateModified;
+    this.OrigDateModified = fileProps.OrigDateModified;
     this.dateLastIndexed = fileProps.dateLastIndexed;
     this.name = fileProps.name;
     this.extension = fileProps.extension;
@@ -86,6 +102,7 @@ export class ClientFile {
     this.filename = base.slice(0, base.lastIndexOf('.'));
 
     this.tags = observable(this.store.getTags(fileProps.tags));
+    this.extraProperties = observable(this.store.getExtraProperties(fileProps.extraProperties));
 
     // observe all changes to observable fields
     this.saveHandler = reaction(
@@ -104,26 +121,99 @@ export class ClientFile {
     makeObservable(this);
   }
 
+  /**
+   * Gets his tags and all inherithed tags from parent and implied tags from his tags.
+   */
+  @computed get inheritedTags(): ClientTag[] {
+    if (this.store.InheritedTagsVisibilityMode === 'disabled') {
+      return Array.from(this.tags);
+    }
+
+    const inheritedTags: ClientTag[] = [];
+    const visited = new Set<ClientTag>();
+    for (const tag of this.tags) {
+      // If the tag is already on the set all it's ancestors are too so skip it.
+      if (visited.has(tag)) {
+        continue;
+      }
+      const ancestors = tag.impliedAncestors;
+      for (let i = 0; i < ancestors.length; i++) {
+        const inheritedTag = ancestors[i];
+        // if a inheritedTag is already visited, skip his whole impliedAncestors.
+        if (visited.has(inheritedTag)) {
+          i += inheritedTag.impliedAncestors.length - 1;
+          continue;
+        }
+        // If the tag should be shown add it to the set.
+        if (inheritedTag.shouldShowWhenInherited) {
+          visited.add(inheritedTag);
+          inheritedTags.push(inheritedTag);
+        }
+      }
+      // Ensure to add the explicit assigned tags,
+      // it might have been excluded by not passing inheritedTag.shouldShowWhenInherited
+      if (!visited.has(tag)) {
+        visited.add(tag);
+        inheritedTags.push(tag);
+      }
+    }
+    return inheritedTags;
+  }
+
+  /**
+   * computed property to centralize sorting.
+   */
+  @computed get sortedInheritedTags(): ClientTag[] {
+    return this.inheritedTags.slice(0).sort((a, b) => a.flatIndex - b.flatIndex);
+  }
+
   @action.bound setThumbnailPath(thumbnailPath: string): void {
-    this.thumbnailPath = thumbnailPath;
+    this.thumbnailPath = `${thumbnailPath.split('?')[0]}?v=${Date.now()}`;
   }
 
   @action.bound addTag(tag: ClientTag): void {
     const hasTag = this.tags.has(tag);
     if (!hasTag) {
       this.tags.add(tag);
-      tag.incrementFileCount();
+      this.store.addRecentlyUsedTag(tag);
+      tag.incrementFileCount(this.id);
 
-      if (this.tags.size === 1) {
+      if (this.tags.size === 1 && !this.isBroken) {
         this.store.decrementNumUntaggedFiles();
       }
     }
   }
 
+  @action.bound addTags(tagsToAdd: ClientTag[] | Set<ClientTag>): void {
+    const wasEmpty = this.tags.size === 0;
+
+    tagsToAdd.forEach((tag) => {
+      if (!this.tags.has(tag)) {
+        this.tags.add(tag);
+        this.store.addRecentlyUsedTag(tag);
+        tag.incrementFileCount(this.id);
+      }
+    });
+
+    if (wasEmpty && this.tags.size > 0 && !this.isBroken) {
+      this.store.decrementNumUntaggedFiles();
+    }
+  }
+
+  @action.bound setExtraProperty(
+    extraProperty: ClientExtraProperty,
+    value?: ExtraPropertyValue,
+  ): void {
+    const finalValue =
+      value !== undefined ? value : getExtraPropertyDefaultValue(extraProperty.type);
+    this.extraProperties.set(extraProperty, finalValue);
+  }
+
   @action.bound removeTag(tag: ClientTag): void {
     const hadTag = this.tags.delete(tag);
     if (hadTag) {
-      tag.decrementFileCount();
+      tag.decrementFileCount(this.id);
+      this.store.addRecentlyUsedTag(tag);
 
       if (this.tags.size === 0) {
         this.store.incrementNumUntaggedFiles();
@@ -131,10 +221,14 @@ export class ClientFile {
     }
   }
 
+  @action.bound removeExtraProperty(extraProperty: ClientExtraProperty): void {
+    this.extraProperties.delete(extraProperty);
+  }
+
   @action.bound clearTags(): void {
     if (this.tags.size > 0) {
       this.store.incrementNumUntaggedFiles();
-      this.tags.forEach((tag) => tag.decrementFileCount());
+      this.tags.forEach((tag) => tag.decrementFileCount(this.id));
       this.tags.clear();
     }
   }
@@ -148,7 +242,19 @@ export class ClientFile {
     this.tags.replace(tags);
   }
 
+  @action.bound updateExtraPropertiesFromBackend(
+    extraProperties: Map<ClientExtraProperty, ExtraPropertyValue>,
+  ): void {
+    this.extraProperties.replace(extraProperties);
+  }
+
   serialize(): FileDTO {
+    const entries: [string, ExtraPropertyValue][] = Array.from(
+      this.extraProperties.entries(),
+      ([extraProperty, value]) => [extraProperty.id, value],
+    );
+    const extraProperties: ExtraProperties = Object.fromEntries(entries);
+    const extraPropertyIDs = entries.map(([id]) => id);
     return {
       id: this.id,
       ino: this.ino,
@@ -156,12 +262,15 @@ export class ClientFile {
       relativePath: this.relativePath,
       absolutePath: this.absolutePath,
       tags: Array.from(this.tags, (t) => t.id), // removes observable properties from observable array
+      extraPropertyIDs: extraPropertyIDs,
+      extraProperties: extraProperties,
       size: this.size,
       width: this.width,
       height: this.height,
       dateAdded: this.dateAdded,
       dateCreated: this.dateCreated,
       dateModified: this.dateModified,
+      OrigDateModified: this.OrigDateModified,
       dateLastIndexed: this.dateLastIndexed,
       name: this.name,
       extension: this.extension,

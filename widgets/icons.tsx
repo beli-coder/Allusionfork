@@ -26,6 +26,7 @@ import CHROME_DEVTOOLS from 'resources/icons/chrome-devtools.svg';
 import CLEAR_DATABASE from 'resources/icons/clear-database.svg';
 import CLOSE from 'resources/icons/close.svg';
 import COLOR from 'resources/icons/color.svg';
+import COPY from 'resources/icons/copy.svg';
 import CHROME_CLOSE from 'resources/icons/chrome-close.svg';
 import CHROME_MAXIMIZE from 'resources/icons/chrome-maximize.svg';
 import CHROME_MINIMIZE from 'resources/icons/chrome-minimize.svg';
@@ -68,7 +69,7 @@ import META_INFO from 'resources/icons/meta-info.svg';
 // import META_INFO_2 from 'resources/icons/meta-info-2.svg';
 import MORE from 'resources/icons/more.svg';
 import OPEN_EXTERNAL from 'resources/icons/open-external.svg';
-// import OUTLINER from 'resources/icons/outliner.svg';
+import OUTLINER4 from 'resources/icons/outliner4.svg';
 import PLUS from 'resources/icons/plus.svg';
 import PREVIEW from 'resources/icons/preview.svg';
 import RELOAD from 'resources/icons/reload.svg';
@@ -90,13 +91,13 @@ import SELECT from 'resources/icons/select.svg';
 import SELECT_CHECKED from 'resources/icons/select-checked.svg';
 import SETTINGS from 'resources/icons/settings.svg';
 // import SMALL_ARROW_DOWN from 'resources/icons/small-arrow-down.svg';
-// import SMALL_ARROW_RIGHT from 'resources/icons/small-arrow-right.svg';
+import SMALL_ARROW_RIGHT from 'resources/icons/small-arrow-right.svg';
 import SORT from 'resources/icons/sort.svg';
 import SORT_ALT from 'resources/icons/sort-alt.svg';
 import TAG_ADD from 'resources/icons/tag-add.svg';
 // import TAG_ADD_COLLECTION from 'resources/icons/tag-add-collection.svg';
 import TAG_BLANCO from 'resources/icons/tag-blanco.svg';
-// import TAG_GROUP_OPEN from 'resources/icons/tag-group-open.svg';
+import TAG_GROUP_OPEN from 'resources/icons/tag-group-open.svg';
 import TAG_GROUP from 'resources/icons/tag-group.svg';
 import TAG from 'resources/icons/tag.svg';
 import TAG_LINE from 'resources/icons/tag-line.svg';
@@ -130,6 +131,7 @@ const IconSet = {
   CLEAR_DATABASE: toSvg(CLEAR_DATABASE),
   CLOSE: toSvg(CLOSE),
   COLOR: toSvg(COLOR),
+  COPY: toSvg(COPY),
   CHROME_CLOSE: toSvg(CHROME_CLOSE),
   CHROME_MAXIMIZE: toSvg(CHROME_MAXIMIZE),
   CHROME_MINIMIZE: toSvg(CHROME_MINIMIZE),
@@ -162,7 +164,7 @@ const IconSet = {
   // ITEM_EXPAND: toSvg(ITEM_EXPAND),
   ITEM_MOVE_DOWN: toSvg(ITEM_MOVE_DOWN),
   ITEM_MOVE_UP: toSvg(ITEM_MOVE_UP),
-  // OUTLINER: toSvg(OUTLINER),
+  OUTLINER4: toSvg(OUTLINER4),
   LOADING: toSvg(LOADING),
   LOGO: toSvg(LOGO),
   // LOGO_MARK_BLACK: toSvg(LOGOMARK_BLACK),
@@ -194,14 +196,14 @@ const IconSet = {
   SELECT_CHECKED: toSvg(SELECT_CHECKED),
   SETTINGS: toSvg(SETTINGS),
   // SMALL_ARROW_DOWN: toSvg(SMALL_ARROW_DOWN),
-  // SMALL_ARROW_RIGHT: toSvg(SMALL_ARROW_RIGHT),
+  SMALL_ARROW_RIGHT: toSvg(SMALL_ARROW_RIGHT),
   SORT: toSvg(SORT),
   SORT_ALT: toSvg(SORT_ALT),
   // SPACER: toSvg(SPACER),
   TAG_ADD: toSvg(TAG_ADD),
   // TAG_ADD_COLLECTION: toSvg(TAG_ADD_COLLECTION),
   TAG_BLANCO: toSvg(TAG_BLANCO),
-  // TAG_GROUP_OPEN: toSvg(TAG_GROUP_OPEN),
+  TAG_GROUP_OPEN: toSvg(TAG_GROUP_OPEN),
   TAG_GROUP: toSvg(TAG_GROUP),
   TAG: toSvg(TAG),
   TAG_LINE: toSvg(TAG_LINE),

@@ -108,6 +108,11 @@ async function runMainApp(db: Dexie, root: Root): Promise<void> {
   // -------------------------------------------
   // Messaging with the main process
   // -------------------------------------------
+  let f5Reload: boolean | undefined = undefined;
+  RendererMessenger.onf5Reload((frontendOnly?: boolean) => {
+    f5Reload = frontendOnly;
+    RendererMessenger.reload(frontendOnly);
+  });
 
   RendererMessenger.onImportExternalImage(async ({ item }) => {
     console.log('Importing image...', item);
@@ -124,6 +129,8 @@ async function runMainApp(db: Dexie, root: Root): Promise<void> {
 
   RendererMessenger.onFullScreenChanged((val) => rootStore.uiStore.setFullScreen(val));
 
+  RendererMessenger.onSetZoomFactor((val) => rootStore.uiStore.setZoomFactor(val));
+
   /**
    * Adds tags to a file, given its name and the names of the tags
    * @param filePath The path of the file
@@ -132,12 +139,12 @@ async function runMainApp(db: Dexie, root: Root): Promise<void> {
   async function addTagsToFile(filePath: string, tagNames: string[]) {
     const { fileStore, tagStore } = rootStore;
     const clientFile = runInAction(() =>
-      fileStore.fileList.find((file) => file.absolutePath === filePath),
+      fileStore.definedFiles.find((file) => file.absolutePath === filePath),
     );
     if (clientFile) {
       const tags = await Promise.all(
         tagNames.map(async (tagName) => {
-          const clientTag = tagStore.findByName(tagName);
+          const clientTag = tagStore.findByNameOrAlias(tagName);
           if (clientTag !== undefined) {
             return clientTag;
           } else {
@@ -156,11 +163,29 @@ async function runMainApp(db: Dexie, root: Root): Promise<void> {
     rootStore.uiStore.closePreviewWindow();
   });
 
+  /*
   // Runs operations to run before closing the app, e.g. closing child-processes
   // TODO: for async operations, look into https://github.com/electron/electron/issues/9433#issuecomment-960635576
   window.addEventListener('beforeunload', () => {
     rootStore.close();
-  });
+  }); */
+  let asyncOperationDone = false;
+  const handleBeforeUnload = async (event: BeforeUnloadEvent) => {
+    if (!asyncOperationDone) {
+      event.preventDefault();
+      event.returnValue = false;
+      // TODO: Show a warning to prevent closing if rootStore.fileStore.isSaving is true.
+      await rootStore.close();
+      asyncOperationDone = true;
+      console.log('async operation done, closing');
+      if (f5Reload !== undefined) {
+        RendererMessenger.reload(f5Reload);
+      } else {
+        window.close();
+      }
+    }
+  };
+  window.addEventListener('beforeunload', handleBeforeUnload);
 }
 
 async function runPreviewApp(db: Dexie, root: Root): Promise<void> {

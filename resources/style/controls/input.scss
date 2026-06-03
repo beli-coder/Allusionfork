@@ -52,6 +52,20 @@
     height: unset;
     max-height: 100vh;
   }
+
+  &:disabled {
+    background-color: var(--background-color);
+  }
+
+  &:hover:disabled {
+    background-color: var(--background-color);
+  }
+}
+
+textarea.input {
+  color: var(--text-color);
+  resize: vertical;
+  height: fit-content;
 }
 
 /** We cannot use <input type="file" /> as we want to pick directories. However,

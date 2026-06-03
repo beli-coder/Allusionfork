@@ -6,3 +6,9 @@ global.crypto = {
     return crypto.randomUUID();
   },
 };
+
+// In the Node test environment `window` is not defined; shim it so code that
+// calls window.setTimeout / window.clearTimeout works (Node exposes these as globals).
+if (typeof window === 'undefined') {
+  global.window = global;
+}

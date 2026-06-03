@@ -53,6 +53,7 @@ import {
   WINDOW_MAXIMIZE,
   WINDOW_SYSTEM_BUTTON_PRESS,
   WINDOW_UNMAXIMIZE,
+  CONSOLE_MESSAGE,
   GET_LIBRARIES,
   GET_CURRENT_LIBRARY_PATH,
   CREATE_LIBRARY,
@@ -75,6 +76,9 @@ export class RendererMessenger {
   static toggleDevTools = () => ipcRenderer.send(TOGGLE_DEV_TOOLS);
 
   static reload = (frontEndOnly?: boolean) => ipcRenderer.send(RELOAD, frontEndOnly);
+
+  static onf5Reload = (cb: (frontEndOnly?: boolean) => void) =>
+    ipcRenderer.on(RELOAD, (_, frontEndOnly) => cb(frontEndOnly));
 
   static showOpenDialog = (
     options: Electron.OpenDialogOptions,
@@ -99,6 +103,9 @@ export class RendererMessenger {
 
   static onFullScreenChanged = (cb: (val: boolean) => void) =>
     ipcRenderer.on(FULL_SCREEN_CHANGED, (_, val: boolean) => cb(val));
+
+  static onSetZoomFactor = (cb: (level: number) => void) =>
+    ipcRenderer.on(SET_ZOOM_FACTOR, (_, level) => cb(level));
 
   static setZoomFactor = (level: number) => ipcRenderer.invoke(SET_ZOOM_FACTOR, level);
 
@@ -198,6 +205,9 @@ export class RendererMessenger {
     const userDataPath = await RendererMessenger.getPath('userData');
     return path.join(userDataPath, 'themes');
   };
+
+  static sendConsoleMessage = (type: 'log' | 'info' | 'error' | 'warn' | 'debug', message: string) =>
+    ipcRenderer.send(CONSOLE_MESSAGE, { type, message });
 
   static getLibraries = (): GetLibrariesReply => ipcRenderer.sendSync(GET_LIBRARIES);
 

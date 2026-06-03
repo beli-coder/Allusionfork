@@ -20,4 +20,9 @@
       ValueConv => '$val',
     },
   },
+  'Image::ExifTool::XMP::xmp' => {
+    ExtraProperties => {
+      Writable => 'string',
+    },
+  },
 );

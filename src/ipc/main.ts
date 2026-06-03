@@ -52,6 +52,7 @@ import {
   WINDOW_MAXIMIZE,
   WINDOW_SYSTEM_BUTTON_PRESS,
   WINDOW_UNMAXIMIZE,
+  CONSOLE_MESSAGE,
   GET_LIBRARIES,
   GET_CURRENT_LIBRARY_PATH,
   CREATE_LIBRARY,
@@ -74,6 +75,8 @@ export class MainMessenger {
   static onClearDatabase = (cb: () => void) => ipcMain.on(CLEAR_DATABASE, cb);
 
   static onToggleDevTools = (cb: () => void) => ipcMain.on(TOGGLE_DEV_TOOLS, cb);
+
+  static f5Reload = (wc: WebContents, frontEndOnly?: boolean) => wc.send(RELOAD, frontEndOnly);
 
   static onReload = (cb: (frontEndOnly?: boolean) => void) =>
     ipcMain.on(RELOAD, (_, frontEndOnly) => cb(frontEndOnly));
@@ -119,6 +122,8 @@ export class MainMessenger {
 
   static onSetZoomFactor = (cb: (level: number) => void) =>
     ipcMain.handle(SET_ZOOM_FACTOR, (_, level) => cb(level));
+
+  static setZoomFactor = (wc: WebContents, val: number) => wc.send(SET_ZOOM_FACTOR, val);
 
   static onGetZoomFactor = (cb: () => number) =>
     ipcMain.on(GET_ZOOM_FACTOR, (e) => (e.returnValue = cb()));
@@ -195,6 +200,10 @@ export class MainMessenger {
 
   static onIsCheckUpdatesOnStartupEnabled = (cb: () => boolean) =>
     ipcMain.on(IS_CHECK_UPDATES_ON_STARTUP_ENABLED, (e) => (e.returnValue = cb()));
+
+  static onConsoleMessage = (
+    cb: (type: 'log' | 'info' | 'error' | 'warn' | 'debug', message: string) => void,
+  ) => ipcMain.on(CONSOLE_MESSAGE, (_, { type, message }) => cb(type, message));
 
   static onGetLibraries = (cb: () => GetLibrariesReply) =>
     ipcMain.on(GET_LIBRARIES, (e) => (e.returnValue = cb()));

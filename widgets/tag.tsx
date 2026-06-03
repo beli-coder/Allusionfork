@@ -9,6 +9,7 @@ interface TagProps {
   text: string;
   /** background-color in CSS */
   color?: string;
+  isHeader?: boolean;
   className?: string;
   onClick?: () => void;
   onRemove?: () => void;
@@ -17,7 +18,7 @@ interface TagProps {
 }
 
 const Tag = (props: TagProps) => {
-  const { text, color, className, onClick, onRemove, tooltip } = props;
+  const { text, color, isHeader, className, onClick, onRemove, tooltip } = props;
 
   const style = useMemo(
     () => (color ? { backgroundColor: color, color: getColorFromBackground(color) } : undefined),
@@ -26,15 +27,13 @@ const Tag = (props: TagProps) => {
 
   return (
     <span
-      className={`tag ${className || ''}`}
+      className={`tag ${className || ''} ${isHeader ? 'tag-header' : ''}`}
       data-tooltip={tooltip}
       onClick={onClick}
       style={style}
       onContextMenu={props.onContextMenu}
     >
-      <span className="label" title={text}>
-        {text}
-      </span>
+      <span className="label">{text}</span>
       {onRemove ? (
         <IconButton
           icon={IconSet.CLOSE}

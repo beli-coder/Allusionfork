@@ -4,18 +4,28 @@ import { retainArray, shuffleArray } from '../../common/core';
 import { DataStorage } from '../api/data-storage';
 import {
   ArrayConditionDTO,
+  BaseIndexSignature,
   ConditionDTO,
   DateConditionDTO,
+  IndexSignatureConditionDTO,
   NumberConditionDTO,
   OrderBy,
   OrderDirection,
+  PropertyKeys,
   StringConditionDTO,
+  StringProperties,
+  isExtraPropertyOperatorType,
+  isNumberOperator,
+  isStringOperator,
 } from '../api/data-storage-search';
 import { FileDTO } from '../api/file';
 import { FileSearchDTO } from '../api/file-search';
 import { ID } from '../api/id';
 import { LocationDTO } from '../api/location';
 import { ROOT_TAG_ID, TagDTO } from '../api/tag';
+import { ExtraPropertyDTO, ExtraPropertyType } from '../api/extraProperty';
+
+const USE_TIMING_PROXY = false;
 
 /**
  * The backend of the application serves as an API, even though it runs on the same machine.
@@ -28,6 +38,7 @@ export default class Backend implements DataStorage {
   #tags: Table<TagDTO, ID>;
   #locations: Table<LocationDTO, ID>;
   #searches: Table<FileSearchDTO, ID>;
+  #extraProperties: Table<ExtraPropertyDTO, ID>;
   #db: Dexie;
   #notifyChange: () => void;
 
@@ -38,6 +49,7 @@ export default class Backend implements DataStorage {
     this.#tags = db.table('tags');
     this.#locations = db.table('locations');
     this.#searches = db.table('searches');
+    this.#extraProperties = db.table('extraProperties');
     this.#db = db;
     this.#notifyChange = notifyChange;
   }
@@ -54,12 +66,18 @@ export default class Backend implements DataStorage {
           name: 'Root',
           dateAdded: new Date(),
           subTags: [],
+          impliedTags: [],
           color: '',
           isHidden: false,
+          isVisibleInherited: false,
+          aliases: [],
+          description: '',
+          isHeader: false,
         });
       }
     });
-    return backend;
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    return USE_TIMING_PROXY ? createTimingProxy(backend) : backend;
   }
 
   async fetchTags(): Promise<TagDTO[]> {
@@ -67,14 +85,43 @@ export default class Backend implements DataStorage {
     return this.#tags.toArray();
   }
 
-  async fetchFiles(order: OrderBy<FileDTO>, fileOrder: OrderDirection): Promise<FileDTO[]> {
+  async fetchFiles(
+    order: OrderBy<FileDTO>,
+    fileOrder: OrderDirection,
+    useNaturalOrdering: boolean,
+    extraPropertyID?: ID,
+  ): Promise<FileDTO[]> {
     console.info('IndexedDB: Fetching files...');
     if (order === 'random') {
       return shuffleArray(await this.#files.toArray());
     }
+    if (order === 'extraProperty') {
+      order = 'dateAdded';
+      if (extraPropertyID) {
+        const extraProperty = await this.#extraProperties.get(extraPropertyID);
+        if (extraProperty) {
+          return await orderByExtraProperty(
+            this.#files.orderBy(order),
+            fileOrder,
+            extraProperty,
+            useNaturalOrdering,
+          );
+        } else {
+          console.error(`IndexedDB: Custom field with ID "${extraPropertyID}" not found.`);
+        }
+      }
+    }
 
-    const collection = this.#files.orderBy(order);
-    const items = await collection.toArray();
+    let items;
+    if (useNaturalOrdering && isFileDTOPropString(order)) {
+      const key = order as StringProperties<FileDTO>;
+      items = (await this.#files.toArray()).sort((a: FileDTO, b: FileDTO) =>
+        a[key].localeCompare(b[key], undefined, { numeric: true, sensitivity: 'base' }),
+      );
+    } else {
+      const collection = this.#files.orderBy(order);
+      items = await collection.toArray();
+    }
 
     if (fileOrder === OrderDirection.Desc) {
       return items.reverse();
@@ -105,10 +152,17 @@ export default class Backend implements DataStorage {
     return this.#searches.toArray();
   }
 
+  async fetchExtraProperties(): Promise<ExtraPropertyDTO[]> {
+    console.info('IndexedDB: Fetching extra properties...');
+    return this.#extraProperties.orderBy('name').toArray();
+  }
+
   async searchFiles(
     criteria: ConditionDTO<FileDTO> | [ConditionDTO<FileDTO>, ...ConditionDTO<FileDTO>[]],
     order: OrderBy<FileDTO>,
     fileOrder: OrderDirection,
+    useNaturalOrdering: boolean,
+    extraPropertyID?: ID,
     matchAny?: boolean,
   ): Promise<FileDTO[]> {
     console.info('IndexedDB: Searching files...', { criteria, matchAny });
@@ -118,10 +172,34 @@ export default class Backend implements DataStorage {
     if (order === 'random') {
       return shuffleArray(await collection.toArray());
     }
+    if (order === 'extraProperty') {
+      order = 'dateAdded';
+      if (extraPropertyID) {
+        const extraProperty = await this.#extraProperties.get(extraPropertyID);
+        if (extraProperty) {
+          return await orderByExtraProperty(
+            collection,
+            fileOrder,
+            extraProperty,
+            useNaturalOrdering,
+          );
+        } else {
+          console.error(`IndexedDB: Custom field with ID "${extraPropertyID}" not found.`);
+        }
+      }
+    }
     // table.reverse() can be an order of magnitude slower than a javascript .reverse() call
     // (tested at ~5000 items, 500ms instead of 100ms)
     // easy to verify here https://jsfiddle.net/dfahlander/xf2zrL4p
-    const items = await collection.sortBy(order);
+    let items;
+    if (useNaturalOrdering && isFileDTOPropString(order)) {
+      const key = order as StringProperties<FileDTO>;
+      items = (await collection.toArray()).sort((a: FileDTO, b: FileDTO) =>
+        a[key].localeCompare(b[key], undefined, { numeric: true, sensitivity: 'base' }),
+      );
+    } else {
+      items = await collection.sortBy(order);
+    }
 
     if (fileOrder === OrderDirection.Desc) {
       return items.reverse();
@@ -148,6 +226,12 @@ export default class Backend implements DataStorage {
     this.#notifyChange();
   }
 
+  async createExtraProperty(extraProperty: ExtraPropertyDTO): Promise<void> {
+    console.info('IndexedDB: Creating extra property...', extraProperty);
+    await this.#extraProperties.add(extraProperty);
+    this.#notifyChange();
+  }
+
   async saveTag(tag: TagDTO): Promise<void> {
     console.info('IndexedDB: Saving tag...', tag);
     await this.#tags.put(tag);
@@ -169,6 +253,12 @@ export default class Backend implements DataStorage {
   async saveSearch(search: FileSearchDTO): Promise<void> {
     console.info('IndexedDB: Saving search...', search);
     await this.#searches.put(search);
+    this.#notifyChange();
+  }
+
+  async saveExtraProperty(extraProperty: ExtraPropertyDTO): Promise<void> {
+    console.info('IndexedDB: Saving extra property...', extraProperty);
+    await this.#extraProperties.put(extraProperty);
     this.#notifyChange();
   }
 
@@ -237,24 +327,38 @@ export default class Backend implements DataStorage {
     this.#notifyChange();
   }
 
+  async removeExtraProperties(extraPropertyIDs: ID[]): Promise<void> {
+    console.info('IndexedDB: Removing extra properties...', extraPropertyIDs);
+    await this.#db.transaction('rw', this.#files, this.#extraProperties, async () => {
+      await this.#files
+        .where('extraPropertyIDs')
+        .anyOf(extraPropertyIDs)
+        .distinct()
+        .modify((file) => {
+          for (const id of extraPropertyIDs) {
+            delete file.extraProperties[id];
+          }
+          retainArray(file.extraPropertyIDs, (id) => !extraPropertyIDs.includes(id));
+        });
+
+      await this.#extraProperties.bulkDelete(extraPropertyIDs);
+    });
+
+    this.#notifyChange();
+  }
+
   async countFiles(): Promise<[fileCount: number, untaggedFileCount: number]> {
     console.info('IndexedDB: Getting number stats of files...');
     return this.#db.transaction('r', this.#files, async () => {
-      const [fileCount, taggedFileCount] = await Promise.all([
-        this.#files.count(),
-        this.#files
-          .where('tags')
-          .between(
-            // UUID NIL
-            '00000000-0000-0000-0000-000000000000',
-            // UUID MAX
-            'ffffffff-ffff-ffff-ffff-ffffffffffff',
-            true,
-            true,
-          )
-          .count(),
-      ]);
-      return [fileCount, fileCount - taggedFileCount];
+      // Aparently converting the whole table into array and check tags in a for loop is a lot faster than using a where tags filter followed by unique().
+      const files = await this.#files.toArray();
+      let unTaggedFileCount = 0;
+      for (let i = 0; i < files.length; i++) {
+        if (files[i].tags.length === 0) {
+          unTaggedFileCount++;
+        }
+      }
+      return [files.length, unTaggedFileCount];
     });
   }
 
@@ -262,11 +366,29 @@ export default class Backend implements DataStorage {
   async createFilesFromPath(path: string, files: FileDTO[]): Promise<void> {
     console.info('IndexedDB: Creating files...', path, files);
     await this.#db.transaction('rw', this.#files, async () => {
-      const existingFilePaths = new Set(
-        await this.#files.where('absolutePath').startsWith(path).keys(),
-      );
+      // previously we did filter getting all the paths that start with the base path using where('absolutePath').startsWith(path).keys()
+      // but converting to an array and extracting the paths is significantly faster than .keys()
+      // Also, for small batches of new files, checking each path individually is faster.
       console.debug('Filtering files...');
-      retainArray(files, (file) => !existingFilePaths.has(file.absolutePath));
+      if (files.length > 500) {
+        // When creating a large number of files (likely adding a big location),
+        // it's faster to fetch all existing paths starting with the given base path.
+        const existingFilePaths = new Set(
+          (await this.#files.where('absolutePath').startsWith(path).toArray()).map(
+            (f) => f.absolutePath,
+          ),
+        );
+        retainArray(files, (file) => !existingFilePaths.has(file.absolutePath));
+      } else {
+        // For small batches, check each file path individually.
+        const checks = await Promise.all(
+          files.map(async (file) => {
+            const count = await this.#files.where('absolutePath').equals(file.absolutePath).count();
+            return count === 0;
+          }),
+        );
+        retainArray(files, (_, i) => checks[i]);
+      }
       console.debug('Creating files...');
       this.#files.bulkAdd(files);
     });
@@ -278,6 +400,108 @@ export default class Backend implements DataStorage {
     console.info('IndexedDB: Clearing database...');
     Dexie.delete(this.#db.name);
   }
+}
+
+// Creates a proxy that wraps the Backend instance to log the execution time of its methods.
+function createTimingProxy(obj: Backend): Backend {
+  console.log('Creating timing proxy for Backend');
+  return new Proxy(obj, {
+    get(target, prop, receiver) {
+      const original = Reflect.get(target, prop, receiver);
+      if (typeof original === 'function') {
+        return (...args: any[]) => {
+          const startTime = performance.now();
+          const result = original.apply(target, args);
+          // Ensure both synchronous and asynchronous results are handled uniformly
+          return Promise.resolve(result).then((res) => {
+            const endTime = performance.now();
+            console.log(`[Timing] ${String(prop)} took ${(endTime - startTime).toFixed(2)}ms`);
+            return res;
+          });
+        };
+      }
+      return original;
+    },
+  });
+}
+
+const exampleFileDTO: FileDTO = {
+  id: '',
+  ino: '',
+  name: '',
+  relativePath: '',
+  absolutePath: '',
+  locationId: '',
+  extension: 'jpg',
+  size: 0,
+  width: 0,
+  height: 0,
+  dateAdded: new Date(),
+  dateCreated: new Date(),
+  dateLastIndexed: new Date(),
+  dateModified: new Date(),
+  OrigDateModified: new Date(),
+  extraProperties: {},
+  extraPropertyIDs: [],
+  tags: [],
+};
+
+function isFileDTOPropString(prop: PropertyKeys<FileDTO>): prop is StringProperties<FileDTO> {
+  return typeof exampleFileDTO[prop] === 'string';
+}
+
+async function orderByExtraProperty(
+  collection: Dexie.Collection<FileDTO, string>,
+  fileOrder: OrderDirection,
+  extraProperty: ExtraPropertyDTO,
+  useNaturalOrdering: boolean,
+): Promise<FileDTO[]> {
+  switch (extraProperty.type) {
+    case ExtraPropertyType.number:
+      return orderByCustomNumberField(collection, extraProperty.id, fileOrder);
+    case ExtraPropertyType.text:
+      return orderByCustomTextField(collection, extraProperty.id, fileOrder, useNaturalOrdering);
+    default:
+      throw new Error(`Unsupported custom field type: ${extraProperty.type}`);
+  }
+}
+
+function castOrDefault<T>(value: unknown, fallback: T, expectedType: string): T {
+  return typeof value === expectedType ? (value as T) : fallback;
+}
+
+async function orderByCustomNumberField(
+  collection: Dexie.Collection<FileDTO, string>,
+  extraPropertyID: ID,
+  fileOrder: OrderDirection,
+): Promise<FileDTO[]> {
+  const files = await collection.toArray();
+  const fallback = fileOrder === OrderDirection.Desc ? -Infinity : Infinity;
+  files.sort((a, b) => {
+    const valueA: number = castOrDefault(a.extraProperties[extraPropertyID], fallback, 'number');
+    const valueB: number = castOrDefault(b.extraProperties[extraPropertyID], fallback, 'number');
+    return fileOrder === OrderDirection.Desc ? valueB - valueA : valueA - valueB;
+  });
+  return files;
+}
+
+async function orderByCustomTextField(
+  collection: Dexie.Collection<FileDTO, string>,
+  extraPropertyID: ID,
+  fileOrder: OrderDirection,
+  numeric: boolean,
+): Promise<FileDTO[]> {
+  const files = await collection.toArray();
+  const fallback = fileOrder === OrderDirection.Desc ? '\u0000' : '\uffff';
+  files.sort((a, b) => {
+    const valueA: string = castOrDefault(a.extraProperties[extraPropertyID], fallback, 'string');
+    const valueB: string = castOrDefault(b.extraProperties[extraPropertyID], fallback, 'string');
+
+    return fileOrder === OrderDirection.Desc
+      ? valueB.localeCompare(valueA, undefined, { numeric: numeric, sensitivity: 'base' })
+      : valueA.localeCompare(valueB, undefined, { numeric: numeric, sensitivity: 'base' });
+  });
+  return files;
 }
 
 type SearchConjunction = 'and' | 'or';
@@ -314,7 +538,7 @@ async function filter<T>(
     if (allWheres && table) {
       return table;
     } else {
-      const critLambdas = criterias.map((crit) => filterLambda(crit));
+      const critLambdas = criterias.map(filterLambda);
       return collection.filter((t) => critLambdas.some((lambda) => lambda(t)));
     }
   }
@@ -332,7 +556,8 @@ async function filter<T>(
 
   // Then just chain a loop of and() calls. A .every() feels more efficient than chaining table.and() calls
   if (otherCrits.length) {
-    table = table.and((item) => otherCrits.every((crit) => filterLambda(crit)(item)));
+    const critLambdas = otherCrits.map(filterLambda);
+    table = table.and((item) => critLambdas.every((lambda) => lambda(item)));
   }
   // for (const crit of otherCrits) {
   //   table = table.and(this._filterLambda(crit));
@@ -361,6 +586,8 @@ function filterWhere<T>(
       return filterNumberWhere(where, crit);
     case 'date':
       return filterDateWhere(where, crit);
+    case 'indexSignature':
+      return filterIndexSignatureLambda(crit);
   }
 }
 
@@ -374,6 +601,8 @@ function filterLambda<T>(crit: ConditionDTO<T>): (val: T) => boolean {
       return filterNumberLambda(crit);
     case 'date':
       return filterDateLambda(crit);
+    case 'indexSignature':
+      return filterIndexSignatureLambda(crit);
   }
 }
 
@@ -441,6 +670,8 @@ function filterStringLambda<T>(crit: StringConditionDTO<T>): (t: any) => boolean
 
   switch (crit.operator) {
     case 'equals':
+      return (t: any) => (t[key] as string) === crit.value;
+    case 'equalsIgnoreCase':
       return (t: any) => (t[key] as string).toLowerCase() === valLow;
     case 'notEqual':
       return (t: any) => (t[key] as string).toLowerCase() !== valLow;
@@ -449,6 +680,8 @@ function filterStringLambda<T>(crit: StringConditionDTO<T>): (t: any) => boolean
     case 'notContains':
       return (t: any) => !(t[key] as string).toLowerCase().includes(valLow);
     case 'startsWith':
+      return (t: any) => (t[key] as string).startsWith(crit.value);
+    case 'startsWithIgnoreCase':
       return (t: any) => (t[key] as string).toLowerCase().startsWith(valLow);
     case 'notStartsWith':
       return (t: any) => !(t[key] as string).toLowerCase().startsWith(valLow);
@@ -500,6 +733,60 @@ function filterNumberLambda<T>(crit: NumberConditionDTO<T>): (t: any) => boolean
     default:
       const _exhaustiveCheck: never = crit.operator;
       return _exhaustiveCheck;
+  }
+}
+
+function filterIndexSignatureLambda<T>(
+  crit: IndexSignatureConditionDTO<T, any>,
+): (t: any) => boolean {
+  const {
+    value: [keyIS, valueIS],
+  } = crit;
+
+  if (isExtraPropertyOperatorType(crit.operator)) {
+    switch (crit.operator) {
+      case 'existsInFile':
+        return (t: any) => t[crit.key][keyIS] !== undefined;
+      case 'notExistsInFile':
+        return (t: any) => t[crit.key][keyIS] === undefined;
+      default:
+        const _exhaustiveCheck: never = crit.operator;
+        return _exhaustiveCheck;
+    }
+  }
+  switch (typeof valueIS) {
+    case 'number':
+      if (isNumberOperator(crit.operator)) {
+        const numberCrit: NumberConditionDTO<BaseIndexSignature> = {
+          key: keyIS,
+          operator: crit.operator,
+          value: valueIS,
+          valueType: 'number',
+        };
+        const lamda = filterNumberLambda<BaseIndexSignature>(numberCrit);
+        return (t: any) => {
+          const obj = t[crit.key];
+          return typeof obj[keyIS] === 'number' ? lamda(obj) : false;
+        };
+      }
+      return () => false;
+    case 'string':
+      if (isStringOperator(crit.operator)) {
+        const stringCrit: StringConditionDTO<BaseIndexSignature> = {
+          key: keyIS,
+          operator: crit.operator,
+          value: valueIS,
+          valueType: 'string',
+        };
+        const lamda = filterStringLambda<BaseIndexSignature>(stringCrit);
+        return (t: any) => {
+          const obj = t[crit.key];
+          return typeof obj[keyIS] === 'string' ? lamda(obj) : false;
+        };
+      }
+      return () => false;
+    default:
+      return () => false;
   }
 }
 

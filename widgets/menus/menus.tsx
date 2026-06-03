@@ -1,4 +1,4 @@
-import React, { ForwardedRef, forwardRef, useLayoutEffect, useState } from 'react';
+import React, { ForwardedRef, forwardRef, useLayoutEffect, useRef, useState } from 'react';
 
 import { usePopover } from '../popovers/usePopover';
 import {
@@ -49,18 +49,29 @@ export type MenuSubItemProps = {
   icon?: JSX.Element;
   text: string;
   disabled?: boolean;
+  accelerator?: JSX.Element;
+  checked?: boolean;
   children: React.ReactNode;
 };
 
-export const MenuSubItem = ({ text, icon, disabled, children }: MenuSubItemProps) => {
+const SUB_ITEM_TIME_TO_CLOSE = 300;
+
+export const MenuSubItem = ({
+  text,
+  icon,
+  disabled,
+  children,
+  accelerator,
+  checked,
+}: MenuSubItemProps) => {
   const [isOpen, setIsOpen] = useState(false);
-  const { style, reference, floating, update } = usePopover('right-start', [
-    'right',
-    'right-end',
-    'left-start',
-    'left',
-    'left-end',
-  ]);
+  const closeTimeoutRef = useRef<null | number>(null);
+  const openTimeoutRef = useRef<null | number>(null);
+  const { style, reference, floating, update } = usePopover(
+    'right-start',
+    ['right', 'right-end', 'left-start', 'left', 'left-end'],
+    'fixed',
+  );
 
   useLayoutEffect(() => {
     if (isOpen) {
@@ -69,8 +80,16 @@ export const MenuSubItem = ({ text, icon, disabled, children }: MenuSubItemProps
   }, [isOpen, update]);
 
   const handleBlur = (e: React.FocusEvent) => {
+    if (openTimeoutRef.current) {
+      clearTimeout(openTimeoutRef.current);
+    }
     if (isOpen && !e.currentTarget.contains(e.relatedTarget as Node)) {
-      setIsOpen(false);
+      if (closeTimeoutRef.current) {
+        clearTimeout(closeTimeoutRef.current);
+      }
+      closeTimeoutRef.current = window.setTimeout(() => {
+        setIsOpen(false);
+      }, SUB_ITEM_TIME_TO_CLOSE);
     }
   };
 
@@ -100,9 +119,15 @@ export const MenuSubItem = ({ text, icon, disabled, children }: MenuSubItemProps
   };
 
   const handleMouseEnter = (e: React.MouseEvent<HTMLElement>) => {
-    if (!disabled && e.currentTarget.firstElementChild === e.target) {
+    if (!disabled) {
+      if (closeTimeoutRef.current) {
+        clearTimeout(closeTimeoutRef.current);
+      }
       (e.currentTarget.firstElementChild as HTMLElement).focus();
-      setIsOpen(true);
+      closeTimeoutRef.current = null;
+      openTimeoutRef.current = window.setTimeout(() => {
+        setIsOpen(true);
+      }, SUB_ITEM_TIME_TO_CLOSE);
     }
   };
 
@@ -111,19 +136,32 @@ export const MenuSubItem = ({ text, icon, disabled, children }: MenuSubItemProps
       e.currentTarget.firstElementChild === e.target &&
       !e.currentTarget.contains(e.relatedTarget as Node)
     ) {
-      setIsOpen(false);
+      if (closeTimeoutRef.current) {
+        clearTimeout(closeTimeoutRef.current);
+      }
+      closeTimeoutRef.current = window.setTimeout(() => {
+        setIsOpen(false);
+      }, SUB_ITEM_TIME_TO_CLOSE);
     }
   };
 
   return (
     <li
       role="none"
+      className={checked ? 'checked' : ''}
       onBlur={handleBlur}
       onKeyDown={handleKeyDown}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      <MenuItemLink ref={reference} expanded={isOpen} text={text} icon={icon} disabled={disabled} />
+      <MenuItemLink
+        ref={reference}
+        expanded={isOpen}
+        text={text}
+        icon={icon}
+        disabled={disabled}
+        accelerator={accelerator}
+      />
       <ul
         ref={floating}
         data-popover

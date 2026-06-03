@@ -4,10 +4,10 @@ import React from 'react';
 import { IconSet } from 'widgets';
 import { ToolbarButton } from 'widgets/toolbar';
 import { FileRemoval } from '../../components/RemovalAlert';
-import FileTagEditor from '../../containers/AppToolbar/FileTagEditor';
 import { useStore } from '../../contexts/StoreContext';
 import { SortCommand, ViewCommand } from './Menus';
 import Searchbar from './Searchbar';
+import { FileExtraPropertiesEditorButton, FileTagEditorButton } from './ToolbarButtons';
 
 const OutlinerToggle = observer(() => {
   const { uiStore } = useStore();
@@ -41,7 +41,10 @@ const PrimaryCommands = observer(() => {
         <RemoveFilesPopover />
       ) : (
         // Only show when not viewing missing files (so it is replaced by the Delete button)
-        <FileTagEditor />
+        <>
+          <FileTagEditorButton />
+          <FileExtraPropertiesEditorButton />
+        </>
       )}
 
       <SortCommand />
@@ -67,7 +70,8 @@ export const SlideModeCommand = observer(() => {
 
       <div className="spacer" />
 
-      <FileTagEditor />
+      <FileTagEditorButton />
+      <FileExtraPropertiesEditorButton />
 
       <ToolbarButton
         icon={IconSet.INFO}
@@ -83,7 +87,7 @@ export const SlideModeCommand = observer(() => {
 const FileSelectionCommand = observer(() => {
   const { uiStore, fileStore } = useStore();
   const selectionCount = uiStore.fileSelection.size;
-  const fileCount = fileStore.fileList.length;
+  const fileCount = fileStore.numLoadedFiles;
 
   const allFilesSelected = fileCount > 0 && selectionCount === fileCount;
   // If everything is selected, deselect all. Else, select all
@@ -97,7 +101,7 @@ const FileSelectionCommand = observer(() => {
       icon={allFilesSelected ? IconSet.SELECT_ALL_CHECKED : IconSet.SELECT_ALL}
       onClick={handleToggleSelect}
       pressed={allFilesSelected}
-      text={selectionCount}
+      text={fileCount == 0 ? '0' : selectionCount + ' / ' + fileCount}
       tooltip="Selects or deselects all images"
       disabled={fileCount === 0}
     />
