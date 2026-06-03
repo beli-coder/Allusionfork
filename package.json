@@ -68,18 +68,22 @@
       "build/**/*",
       "package.json"
     ],
-    "asar": true
+    "asar": true,
+    "publish": {
+      "provider": "github",
+      "releaseType": "release"
+    }
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/allusion-app/Allusion.git"
+    "url": "git+https://github.com/beli-coder/Allusionfork.git"
   },
   "author": "Allusion-App",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/allusion-app/Allusion/issues"
+    "url": "https://github.com/beli-coder/Allusionfork/issues"
   },
-  "homepage": "https://github.com/allusion-app/Allusion#readme",
+  "homepage": "https://github.com/beli-coder/Allusionfork#readme",
   "devDependencies": {
     "@svgr/webpack": "^6.5.1",
     "@types/chrome": "^0.0.195",
