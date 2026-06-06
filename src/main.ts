@@ -918,23 +918,28 @@ function switchLibraryInProcess(newLibraryPath: string) {
   // Update registry before exit so the new instance reads up-to-date lastOpened.
   libraryRegistry.updateLastOpened(newLibraryPath);
 
-  // Spawn a fresh Electron process pointed at the new library path.
-  // Using child_process.spawn (not app.relaunch) is reliable on packaged
-  // Windows builds because we hand the OS the exact executable path directly.
-  // The new instance calls app.setPath('userData', newLibraryPath) before
-  // its session is created, so IndexedDB ends up in the right place.
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { spawn } = require('child_process') as typeof import('child_process');
-  const child = spawn(process.execPath, ['--library', newLibraryPath], {
-    detached: true,
-    stdio: 'ignore',
-  });
-  child.unref();
+  // Build the argv for the relaunched process: strip any existing --library flag
+  // and append the new one.
+  const filteredArgs: string[] = [];
+  const currentArgs = process.argv.slice(1);
+  for (let i = 0; i < currentArgs.length; i++) {
+    if (currentArgs[i] === '--library') {
+      i++; // skip flag and its value
+    } else {
+      filteredArgs.push(currentArgs[i]);
+    }
+  }
+  filteredArgs.push('--library', newLibraryPath);
 
-  // Quit current instance so the single-instance lock at the OLD path is
-  // released. The new instance uses a different userData path, so there is
-  // no lock conflict.
-  app.quit();
+  // Queue a relaunch with the correct library path.
+  // Passing execPath explicitly avoids a known issue with packaged Windows builds
+  // where app.relaunch() resolves the wrong executable.
+  app.relaunch({ execPath: process.execPath, args: filteredArgs });
+
+  // app.exit(0) terminates IMMEDIATELY — no window close events, no before-quit.
+  // This matters because previewWindow has an e.preventDefault() close handler
+  // that silently blocks app.quit(), preventing the process from ever exiting.
+  app.exit(0);
 }
 
 function getVersion(): string {
