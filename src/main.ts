@@ -905,77 +905,36 @@ function saveWindowState() {
 }
 
 function forceRelaunch() {
-  switchLibraryInProcess(basePath);
+  // Reload the renderer in-place. Main-process state (ClipServer, basePath) is
+  // preserved — this is correct for all callers (clear-database, error dialog,
+  // Mac Reload menu). If the caller is a library switch, switchLibraryInProcess
+  // is called instead.
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.reload();
+  }
 }
 
-async function switchLibraryInProcess(newLibraryPath: string) {
-  console.log('Switching library to:', newLibraryPath);
-
-  // 1. Update registry before anything else
+function switchLibraryInProcess(newLibraryPath: string) {
+  // Update registry before exit so the new instance reads up-to-date lastOpened.
   libraryRegistry.updateLastOpened(newLibraryPath);
 
-  // 2. Update the mutable path variables — closures will pick up the new values
-  app.setPath('userData', newLibraryPath);
-  basePath = newLibraryPath;
-  preferencesFilePath = path.join(newLibraryPath, 'preferences.json');
-  windowStateFilePath = path.join(newLibraryPath, 'windowState.json');
-  logFilePath = path.join(newLibraryPath, 'app.log');
-
-  // 3. Ensure the new library directory exists
-  await fse.ensureDir(newLibraryPath);
-
-  // 4. Reload preferences for the new library
-  try {
-    preferences = fse.readJSONSync(preferencesFilePath);
-  } catch {
-    preferences = { checkForUpdatesOnStartup: false };
-  }
-
-  // 5. Stop the clip server
-  if (clipServer) {
-    clipServer.setEnabled(false);
-    clipServer = null;
-  }
-
-  // 6. Create a new session for the new library (using a unique partition per path)
-  const newSess = session.fromPartition(`persist:${newLibraryPath}`);
-  setupSession(newSess);
-
-  // 7. Tear down existing windows
-  const oldMain = mainWindow;
-  const oldPreview = previewWindow;
-  mainWindow = null;
-  previewWindow = null;
-
-  // Close preview window (not just hide)
-  if (oldPreview && !oldPreview.isDestroyed()) {
-    oldPreview.destroy();
-  }
-
-  // 8. Create new main window with new session (show: false until ready)
-  createWindow(newSess);
-  createPreviewWindow();
-
-  // 9. Reinitialize clip server with new path
-  clipServer = new ClipServer(newLibraryPath, importExternalImage, addTagsToFile, getTags);
-
-  // 10. Recreate tray if needed
-  if (IS_MAC || clipServer.isRunInBackgroundEnabled()) {
-    createTrayMenu();
-  }
-
-  // 11. Destroy old main window AFTER new one starts loading
-  if (oldMain && !oldMain.isDestroyed()) {
-    oldMain.destroy();
-  }
-
-  // 12. Re-register the import queue handler for the new window
-  MainMessenger.onceInitialized().then(async () => {
-    if (clipServer === null || mainWindow === null) return;
-    const importItems = await clipServer.getImportQueue();
-    await Promise.all(importItems.map(importExternalImage));
-    clipServer.clearImportQueue();
+  // Spawn a fresh Electron process pointed at the new library path.
+  // Using child_process.spawn (not app.relaunch) is reliable on packaged
+  // Windows builds because we hand the OS the exact executable path directly.
+  // The new instance calls app.setPath('userData', newLibraryPath) before
+  // its session is created, so IndexedDB ends up in the right place.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { spawn } = require('child_process') as typeof import('child_process');
+  const child = spawn(process.execPath, ['--library', newLibraryPath], {
+    detached: true,
+    stdio: 'ignore',
   });
+  child.unref();
+
+  // Quit current instance so the single-instance lock at the OLD path is
+  // released. The new instance uses a different userData path, so there is
+  // no lock conflict.
+  app.quit();
 }
 
 function getVersion(): string {
