@@ -25,7 +25,7 @@ import { TagDTO, ROOT_TAG_ID } from './api/tag';
 import { MainMessenger } from './ipc/main';
 import { WindowSystemButtonPress } from './ipc/messages';
 import { LibraryRegistry } from './libraries/library-registry';
-import { resolveCliLibraryPath, buildLibraryArgs } from './libraries/cli-args';
+import { resolveCliLibraryPath } from './libraries/cli-args';
 
 // Allow running an independent library instance via: --library <path>
 // app.setPath MUST be called before any app.getPath call and before app.isReady().
@@ -809,7 +809,12 @@ MainMessenger.onCreateLibrary(async ({ name, path: libraryPath }) => {
   }
 });
 
-MainMessenger.onSwitchLibrary(({ path: libraryPath }) => relaunchWithLibrary(libraryPath));
+MainMessenger.onSwitchLibrary(({ path: libraryPath }) => {
+  // Guard: never restart into the library that is already loaded.
+  if (libraryPath !== basePath) {
+    relaunchWithLibrary(libraryPath);
+  }
+});
 
 MainMessenger.onRemoveLibrary(({ id }) => libraryRegistry.removeLibrary(id));
 
@@ -901,7 +906,11 @@ function forceRelaunch() {
 }
 
 function relaunchWithLibrary(libraryPath: string) {
-  app.relaunch({ args: buildLibraryArgs(process.argv.slice(1), libraryPath) });
+  // Stamp last-opened so the registry is up-to-date in the new instance.
+  libraryRegistry.updateLastOpened(libraryPath);
+  // Pass ONLY --library <path>; trying to preserve process.argv args on a
+  // packaged Windows build can inject Electron-internal flags that confuse startup.
+  app.relaunch({ args: ['--library', libraryPath] });
   app.exit();
 }
 

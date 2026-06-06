@@ -5,7 +5,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { RendererMessenger } from 'src/ipc/renderer';
 import type { LibraryEntry } from 'src/ipc/messages';
 import { Button, ButtonGroup, IconSet } from 'widgets';
-import { Alert, DialogButton } from 'widgets/popovers';
 import FileInput from '../components/FileInput';
 import PopupWindow from '../components/PopupWindow';
 import { useStore } from '../contexts/StoreContext';
@@ -30,7 +29,7 @@ const LibraryManagerContent = () => {
   const [newName, setNewName] = useState('');
   const [newFolderPath, setNewFolderPath] = useState('');
   const [addError, setAddError] = useState('');
-  const [switchTarget, setSwitchTarget] = useState<LibraryEntry | null>(null);
+  const [isSwitching, setIsSwitching] = useState(false);
 
   const refresh = useCallback(() => {
     const { entries, currentPath: cp } = RendererMessenger.getLibraries();
@@ -67,9 +66,20 @@ const LibraryManagerContent = () => {
     if (e.key === 'Enter') handleAdd();
   };
 
+  const handleSwitch = (lib: LibraryEntry) => {
+    setIsSwitching(true);
+    RendererMessenger.switchLibrary({ path: lib.path });
+  };
+
   return (
     <>
       <h2>Libraries</h2>
+
+      {isSwitching && (
+        <div className="library-switching-banner">
+          Switching library — restarting Allusion…
+        </div>
+      )}
 
       <div className="library-current-path">
         <span className="library-label">Current folder:</span>
@@ -92,6 +102,7 @@ const LibraryManagerContent = () => {
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={handleAddKeyDown}
+            disabled={isSwitching}
           />
           <FileInput
             className="btn-outlined"
@@ -100,7 +111,13 @@ const LibraryManagerContent = () => {
           >
             {newFolderPath ? path.basename(newFolderPath) : 'Choose folder…'}
           </FileInput>
-          <Button text="Add" onClick={handleAdd} styling="outlined" icon={IconSet.PLUS} />
+          <Button
+            text="Add"
+            onClick={handleAdd}
+            styling="outlined"
+            icon={IconSet.PLUS}
+            disabled={isSwitching}
+          />
         </div>
         {addError && <p className="library-error">{addError}</p>}
         {newFolderPath && (
@@ -112,7 +129,7 @@ const LibraryManagerContent = () => {
       <ul className="library-list">
         {libraries.length === 0 && (
           <li className="library-empty">
-            No libraries registered yet. Add one above or switch to get started.
+            No libraries registered yet. Add one above.
           </li>
         )}
         {libraries.map((lib) => (
@@ -120,26 +137,12 @@ const LibraryManagerContent = () => {
             key={lib.id}
             lib={lib}
             isCurrent={lib.path === currentPath}
-            onSwitch={setSwitchTarget}
+            isSwitching={isSwitching}
+            onSwitch={handleSwitch}
             onRefresh={refresh}
           />
         ))}
       </ul>
-
-      <Alert
-        open={switchTarget !== null}
-        title={`Switch to "${switchTarget?.name}"?`}
-        primaryButtonText="Switch & Restart"
-        onClick={(button) => {
-          if (button === DialogButton.PrimaryButton && switchTarget) {
-            RendererMessenger.switchLibrary({ path: switchTarget.path });
-          }
-          setSwitchTarget(null);
-        }}
-      >
-        <p>Allusion will restart to load this library. Unsaved changes will be lost.</p>
-        <p className="library-switch-path">{switchTarget?.path}</p>
-      </Alert>
     </>
   );
 };
@@ -147,11 +150,12 @@ const LibraryManagerContent = () => {
 type LibraryItemProps = {
   lib: LibraryEntry;
   isCurrent: boolean;
+  isSwitching: boolean;
   onSwitch: (lib: LibraryEntry) => void;
   onRefresh: () => void;
 };
 
-const LibraryItem = ({ lib, isCurrent, onSwitch, onRefresh }: LibraryItemProps) => {
+const LibraryItem = ({ lib, isCurrent, isSwitching, onSwitch, onRefresh }: LibraryItemProps) => {
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(lib.name);
 
@@ -214,6 +218,7 @@ const LibraryItem = ({ lib, isCurrent, onSwitch, onRefresh }: LibraryItemProps) 
             onClick={() => onSwitch(lib)}
             styling="outlined"
             icon={IconSet.RELOAD}
+            disabled={isSwitching}
           />
         ) : undefined}
         {!isRenaming ? (
@@ -222,6 +227,7 @@ const LibraryItem = ({ lib, isCurrent, onSwitch, onRefresh }: LibraryItemProps) 
             onClick={startRename}
             styling="outlined"
             icon={IconSet.REPLACE}
+            disabled={isSwitching}
           />
         ) : undefined}
         <Button
@@ -229,7 +235,7 @@ const LibraryItem = ({ lib, isCurrent, onSwitch, onRefresh }: LibraryItemProps) 
           onClick={handleRemove}
           styling="outlined"
           icon={IconSet.CLEAR_DATABASE}
-          disabled={isCurrent}
+          disabled={isCurrent || isSwitching}
           tooltip={isCurrent ? 'Cannot remove the active library' : undefined}
         />
       </ButtonGroup>
