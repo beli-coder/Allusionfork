@@ -34,12 +34,12 @@ if (cliLibraryPath) {
   app.setPath('userData', cliLibraryPath);
 }
 
-const basePath = app.getPath('userData');
+let basePath = app.getPath('userData');
 const libraryRegistry = LibraryRegistry.create();
 
-const preferencesFilePath = path.join(basePath, 'preferences.json');
-const windowStateFilePath = path.join(basePath, 'windowState.json');
-const logFilePath = path.join(basePath, 'app.log');
+let preferencesFilePath = path.join(basePath, 'preferences.json');
+let windowStateFilePath = path.join(basePath, 'windowState.json');
+let logFilePath = path.join(basePath, 'app.log');
 
 type PreferencesFile = {
   checkForUpdatesOnStartup?: boolean;
@@ -55,22 +55,19 @@ let previewWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let clipServer: ClipServer | null = null;
 
-function initialize() {
-  console.log('Initializing Allusion...');
-
+function setupSession(sess: Electron.Session) {
   // Disable spellchecker languages and block any download requests for spellcheck dictionaries *.bdic
   // TODO: Currently there are no spellchecker enhanced features implemented, like contextual menu
   // options or configurations, and it becomes annoying for users who use multiple languages or words not in the dictionary.
   // Maybe in the future it would be nice to have those features and allow configuring the spellchecker.
-  session.defaultSession.setSpellCheckerLanguages([]);
-  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+  sess.setSpellCheckerLanguages([]);
+  sess.webRequest.onBeforeRequest((details, callback) => {
     if (details.url.includes('.bdic')) {
       return callback({ cancel: true });
     }
     callback({});
   });
-
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+  sess.webRequest.onHeadersReceived((details, callback) => {
     if (details.responseHeaders === undefined) {
       callback({});
     } else {
@@ -83,9 +80,35 @@ function initialize() {
       });
     }
   });
+}
+
+function initialize() {
+  console.log('Initializing Allusion...');
+
+  setupSession(session.defaultSession);
 
   createWindow();
   createPreviewWindow();
+
+  if (clipServer === null) {
+    clipServer = new ClipServer(basePath, importExternalImage, addTagsToFile, getTags);
+  }
+
+  // System tray icon: Always show on Mac, or other platforms when the app is running in the background
+  // Useful for browser extension, so it will work even when the window is closed
+  if (IS_MAC || clipServer.isRunInBackgroundEnabled()) {
+    createTrayMenu();
+  }
+
+  // Import images that were added while the window was closed
+  MainMessenger.onceInitialized().then(async () => {
+    if (clipServer === null || mainWindow === null) {
+      return;
+    }
+    const importItems = await clipServer.getImportQueue();
+    await Promise.all(importItems.map(importExternalImage));
+    clipServer.clearImportQueue();
+  });
 
   // Initialize preferences file and its consequences
   try {
@@ -106,7 +129,7 @@ function initialize() {
   }
 }
 
-function createWindow() {
+function createWindow(sess?: Electron.Session) {
   // Remember window size and position
   const previousWindowState = getPreviousWindowState();
 
@@ -120,6 +143,7 @@ function createWindow() {
       nodeIntegrationInSubFrames: true,
       contextIsolation: false,
       spellcheck: false,
+      ...(sess ? { session: sess } : {}),
     },
     minWidth: MIN_WINDOW_WIDTH,
     minHeight: MIN_WINDOW_HEIGHT,
@@ -346,25 +370,6 @@ function createWindow() {
     () => mainWindow !== null && MainMessenger.blur(mainWindow.webContents),
   );
 
-  if (clipServer === null) {
-    clipServer = new ClipServer(basePath, importExternalImage, addTagsToFile, getTags);
-  }
-
-  // System tray icon: Always show on Mac, or other platforms when the app is running in the background
-  // Useful for browser extension, so it will work even when the window is closed
-  if (IS_MAC || clipServer.isRunInBackgroundEnabled()) {
-    createTrayMenu();
-  }
-
-  // Import images that were added while the window was closed
-  MainMessenger.onceInitialized().then(async () => {
-    if (clipServer === null || mainWindow === null) {
-      return;
-    }
-    const importItems = await clipServer.getImportQueue();
-    await Promise.all(importItems.map(importExternalImage));
-    clipServer.clearImportQueue();
-  });
 }
 
 function createPreviewWindow() {
@@ -810,9 +815,9 @@ MainMessenger.onCreateLibrary(async ({ name, path: libraryPath }) => {
 });
 
 MainMessenger.onSwitchLibrary(({ path: libraryPath }) => {
-  // Guard: never restart into the library that is already loaded.
+  // Guard: never switch into the library that is already loaded.
   if (libraryPath !== basePath) {
-    relaunchWithLibrary(libraryPath);
+    switchLibraryInProcess(libraryPath);
   }
 });
 
@@ -900,18 +905,77 @@ function saveWindowState() {
 }
 
 function forceRelaunch() {
-  // app.relaunch() with no args preserves the original argv (including --library if present)
-  app.relaunch();
-  app.exit();
+  switchLibraryInProcess(basePath);
 }
 
-function relaunchWithLibrary(libraryPath: string) {
-  // Stamp last-opened so the registry is up-to-date in the new instance.
-  libraryRegistry.updateLastOpened(libraryPath);
-  // Pass ONLY --library <path>; trying to preserve process.argv args on a
-  // packaged Windows build can inject Electron-internal flags that confuse startup.
-  app.relaunch({ args: ['--library', libraryPath] });
-  app.exit();
+async function switchLibraryInProcess(newLibraryPath: string) {
+  console.log('Switching library to:', newLibraryPath);
+
+  // 1. Update registry before anything else
+  libraryRegistry.updateLastOpened(newLibraryPath);
+
+  // 2. Update the mutable path variables — closures will pick up the new values
+  app.setPath('userData', newLibraryPath);
+  basePath = newLibraryPath;
+  preferencesFilePath = path.join(newLibraryPath, 'preferences.json');
+  windowStateFilePath = path.join(newLibraryPath, 'windowState.json');
+  logFilePath = path.join(newLibraryPath, 'app.log');
+
+  // 3. Ensure the new library directory exists
+  await fse.ensureDir(newLibraryPath);
+
+  // 4. Reload preferences for the new library
+  try {
+    preferences = fse.readJSONSync(preferencesFilePath);
+  } catch {
+    preferences = { checkForUpdatesOnStartup: false };
+  }
+
+  // 5. Stop the clip server
+  if (clipServer) {
+    clipServer.setEnabled(false);
+    clipServer = null;
+  }
+
+  // 6. Create a new session for the new library (using a unique partition per path)
+  const newSess = session.fromPartition(`persist:${newLibraryPath}`);
+  setupSession(newSess);
+
+  // 7. Tear down existing windows
+  const oldMain = mainWindow;
+  const oldPreview = previewWindow;
+  mainWindow = null;
+  previewWindow = null;
+
+  // Close preview window (not just hide)
+  if (oldPreview && !oldPreview.isDestroyed()) {
+    oldPreview.destroy();
+  }
+
+  // 8. Create new main window with new session (show: false until ready)
+  createWindow(newSess);
+  createPreviewWindow();
+
+  // 9. Reinitialize clip server with new path
+  clipServer = new ClipServer(newLibraryPath, importExternalImage, addTagsToFile, getTags);
+
+  // 10. Recreate tray if needed
+  if (IS_MAC || clipServer.isRunInBackgroundEnabled()) {
+    createTrayMenu();
+  }
+
+  // 11. Destroy old main window AFTER new one starts loading
+  if (oldMain && !oldMain.isDestroyed()) {
+    oldMain.destroy();
+  }
+
+  // 12. Re-register the import queue handler for the new window
+  MainMessenger.onceInitialized().then(async () => {
+    if (clipServer === null || mainWindow === null) return;
+    const importItems = await clipServer.getImportQueue();
+    await Promise.all(importItems.map(importExternalImage));
+    clipServer.clearImportQueue();
+  });
 }
 
 function getVersion(): string {
